@@ -33,7 +33,7 @@ class WSApprovalKey:
     expires_at: datetime = None  # pyright: ignore[reportAssignmentType]
 
     def __post_init__(self):
-        # expiration date not given by API, so instead we calculate
+        # expiration date not given by API, so we calculate it
         self.expires_at = self.issued_at + timedelta(days=1)
 
     def is_valid(self) -> bool:
@@ -49,21 +49,26 @@ class KISAuth:
         self._ws_approval_key: WSApprovalKey | None = None
 
         self._rest_headers = {
-            "Content-Type": "application/json",
-            "Accept": "text/plain",
-            "charset": "UTF-8",
-            "User-Agent": self.config.user_agent,
+            "content-type": "application/json; charset=utf-8",
         }
         self._websocket_headers = {
             "content-type": "utf-8",
         }
 
+    def _get_base_url(self) -> str:
+        """Get API base URL for the current environment."""
+        return self.config.url_prod if not self.is_paper else self.config.url_paper
+
+    def _get_ws_base_url(self) -> str:
+        """Get WebSocket base URL for the current environment."""
+        return self.config.ws_prod if not self.is_paper else self.config.ws_paper
+
     def _get_credentials(self) -> tuple[str, str]:
-        """
-        Retreive app key and app secret from the Credentials Manager.
+        """Retreive app key and app secret from the Credentials Manager.
 
         Raises:
             RuntimeError: If either app key or app secret is None (not found in credentials manager)
+
         """
         if not self.is_paper:
             app_key_name = self.config.my_app_key_name
@@ -82,57 +87,12 @@ class KISAuth:
         if not (app_key and app_sec):
             err_msg = (
                 f"App credentials not found in credentials manager. "
-                f"Expected keys: {app_key_name}, {app_sec_name} in service 'kis'"
+                f"Expected keys: {app_key_name!r}, {app_sec_name!r} in service 'kis'"
             )
             logger.error(err_msg)
             raise RuntimeError(err_msg)
 
         return app_key, app_sec
-
-    def _get_base_url(self) -> str:
-        """Get API base URL for the current environment."""
-        return self.config.url_prod if not self.is_paper else self.config.url_paper
-
-    def _get_ws_base_url(self) -> str:
-        """Get WebSocket base URL for the current environment."""
-        return self.config.ws_prod if not self.is_paper else self.config.ws_paper
-
-    def get_access_token(self) -> AccessToken:
-        # Return cached token if valid
-        if self._access_token and self._access_token.is_valid():
-            logger.info("Using cached token")
-            return self._access_token
-
-        # Return saved token from credentials manger, if still valid
-        saved_token = keyring.get_password("kis", "access_token")
-        if saved_token is not None:
-            exp_time_str = keyring.get_password("kis", "access_token_expires_at")
-            if exp_time_str is None:
-                raise RuntimeError(
-                    "`access_token_expires_at` should exist in credentials "
-                    "if `access_token` is saved but is None"
-                )
-            expires_at = datetime.fromisoformat(exp_time_str)
-            if datetime.now() < expires_at:
-                logger.info(
-                    f"Using saved token from keyring (expires at: {expires_at})"
-                )
-                self._access_token = AccessToken(
-                    access_token=saved_token,
-                    token_type="Bearer",
-                    expires_in=int((expires_at - datetime.now()).total_seconds()),
-                    expires_at=expires_at,
-                )
-                return self._access_token
-            else:
-                logger.debug("Saved token expired. Deleting saved token")
-                keyring.delete_password("kis", "access_token")
-                keyring.delete_password("kis", "access_token_expires_at")
-
-        # Acquire new token
-        token = self._acquire_access_token()
-        self._access_token = token
-        return self._access_token
 
     def _acquire_access_token(self) -> AccessToken:
         logger.info("Acquiring new access token")
@@ -155,7 +115,7 @@ class KISAuth:
             data = response.json()
         except requests.RequestException as e:
             err_msg = f"Failed to acquire OAuth access token: {e}"
-            logger.error(err_msg)
+            logger.exception(err_msg)
             raise RuntimeError(err_msg) from e
 
         if response.status_code != 200:
@@ -184,56 +144,6 @@ class KISAuth:
         logger.debug("Successfully acquired new OAuth access token")
 
         return token
-
-    def get_rest_headers(self) -> dict[str, str]:
-        """Get headers for REST API calls.
-
-        Returns:
-            Dictionary of headers with authorization
-        """
-        appkey, appsec = self._get_credentials()
-        headers = self._rest_headers.copy()
-        token = self.get_access_token()
-        headers["authorization"] = f"{token.token_type} {token.access_token}"
-        headers["appkey"] = appkey
-        headers["appsecret"] = appsec
-        return headers
-
-    def get_ws_approval_key(self) -> WSApprovalKey:
-        # Return cached key if valid
-        if self._ws_approval_key and self._ws_approval_key.is_valid():
-            logger.debug("Using cached WebSocket approval key")
-            return self._ws_approval_key
-
-        # Return saved approval key from credentials manger, if still valid
-        saved_key = keyring.get_password("kis", "ws_approval_key")
-        if saved_key is not None:
-            exp_time_str = keyring.get_password("kis", "ws_approval_key_expires_at")
-            if exp_time_str is None:
-                raise RuntimeError(
-                    "`ws_approval_key_expires_at` should exist in credentials "
-                    "if `ws_approval_key` is saved but is None"
-                )
-            expires_at = datetime.fromisoformat(exp_time_str)
-            if datetime.now() < expires_at:
-                logger.info(
-                    f"Using saved approval key from keyring (expires at: {expires_at})"
-                )
-                self._ws_approval_key = WSApprovalKey(
-                    saved_key,
-                    issued_at=expires_at - timedelta(days=1),
-                    expires_at=expires_at,
-                )
-                return self._ws_approval_key
-            else:
-                logger.debug("Saved key expired. Deleting saved key")
-                keyring.delete_password("kis", "ws_approval_key")
-                keyring.delete_password("kis", "ws_approval_key_expires_at")
-
-        # Acquire new key
-        approval_key = self._acquire_ws_approval_key()
-        self._ws_approval_key = approval_key
-        return self._ws_approval_key
 
     def _acquire_ws_approval_key(self) -> WSApprovalKey:
         logger.info("Acquiring new WebSocket approval key")
@@ -276,11 +186,100 @@ class KISAuth:
 
         return approval_key
 
+    def get_access_token(self) -> AccessToken:
+        # Return cached token if valid
+        if self._access_token and self._access_token.is_valid():
+            logger.info("Using cached token")
+            return self._access_token
+
+        # Return saved token from credentials manger, if still valid
+        saved_token = keyring.get_password("kis", "access_token")
+        if saved_token is not None:
+            exp_time_str = keyring.get_password("kis", "access_token_expires_at")
+            if exp_time_str is None:
+                raise RuntimeError(
+                    "`access_token_expires_at` should exist in credentials if "
+                    "`access_token` is saved but is None"
+                )
+            expires_at = datetime.fromisoformat(exp_time_str)
+            if datetime.now() < expires_at:
+                logger.info(
+                    f"Using saved token from keyring (expires at: {expires_at})"
+                )
+                self._access_token = AccessToken(
+                    access_token=saved_token,
+                    token_type="Bearer",
+                    expires_in=int((expires_at - datetime.now()).total_seconds()),
+                    expires_at=expires_at,
+                )
+                return self._access_token
+            else:
+                logger.debug("Saved token expired. Deleting saved token")
+                keyring.delete_password("kis", "access_token")
+                keyring.delete_password("kis", "access_token_expires_at")
+
+        # Acquire new token
+        token = self._acquire_access_token()
+        self._access_token = token
+        return self._access_token
+
+    def get_ws_approval_key(self) -> WSApprovalKey:
+        # Return cached key if valid
+        if self._ws_approval_key and self._ws_approval_key.is_valid():
+            logger.debug("Using cached WebSocket approval key")
+            return self._ws_approval_key
+
+        # Return saved approval key from credentials manger, if still valid
+        saved_key = keyring.get_password("kis", "ws_approval_key")
+        if saved_key is not None:
+            exp_time_str = keyring.get_password("kis", "ws_approval_key_expires_at")
+            if exp_time_str is None:
+                raise RuntimeError(
+                    "`ws_approval_key_expires_at` should exist in credentials if "
+                    "`ws_approval_key` is saved but is None"
+                )
+            expires_at = datetime.fromisoformat(exp_time_str)
+            if datetime.now() < expires_at:
+                logger.info(
+                    f"Using saved approval key from keyring (expires at: {expires_at})"
+                )
+                self._ws_approval_key = WSApprovalKey(
+                    saved_key,
+                    issued_at=expires_at - timedelta(days=1),
+                    expires_at=expires_at,
+                )
+                return self._ws_approval_key
+            else:
+                logger.debug("Saved key expired. Deleting saved key")
+                keyring.delete_password("kis", "ws_approval_key")
+                keyring.delete_password("kis", "ws_approval_key_expires_at")
+
+        # Acquire new key
+        approval_key = self._acquire_ws_approval_key()
+        self._ws_approval_key = approval_key
+        return self._ws_approval_key
+
+    def get_rest_headers(self) -> dict[str, str]:
+        """Get headers for REST, including authorization
+
+        Returns:
+            Dictionary of headers with authorization
+
+        """
+        appkey, appsec = self._get_credentials()
+        headers = self._rest_headers.copy()
+        token = self.get_access_token()
+        headers["authorization"] = f"{token.token_type} {token.access_token}"
+        headers["appkey"] = appkey
+        headers["appsecret"] = appsec
+        return headers
+
     def get_ws_headers(self) -> dict[str, str]:
-        """Get headers for WebSocket connection.
+        """Get headers for WebSocket connection, including authorization
 
         Returns:
             Dictionary of headers with approval key
+
         """
         headers = self._websocket_headers.copy()
         headers["approval_key"] = self.get_ws_approval_key().key

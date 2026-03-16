@@ -1,6 +1,6 @@
 import logging
-import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import yaml
 
@@ -9,22 +9,22 @@ logger = logging.getLogger(__name__)
 
 @dataclass(kw_only=True)
 class KISConfig:
+    # paper (모의) mode
     is_paper: bool
-
     my_htsid: str
 
-    my_app_key_name: str
-    my_app_sec_name: str
-    my_acct_stock: str
-    my_acct_future: str
+    # required if not is_paper
+    my_app_key_name: str | None = None
+    my_app_sec_name: str | None = None
+    my_acct_stock: str | None = None
+    my_acct_future: str | None = None
     my_prod: str
 
+    # required if is_paper
     my_paper_app_key_name: str | None = None
     my_paper_app_sec_name: str | None = None
     my_paper_stock: str | None = None
     my_paper_future: str | None = None
-
-    user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
     url_prod = "https://openapi.koreainvestment.com:9443"
     url_paper = "https://openapivts.koreainvestment.com:29443"
@@ -32,26 +32,28 @@ class KISConfig:
     ws_paper = "wss://ops.koreainvestment.com:31000"
 
     @classmethod
-    def from_yaml(cls, is_paper: bool, yaml_file=None) -> "KISConfig":
+    def from_yaml(cls, *, yaml_file: Path | None = None, is_paper: bool) -> "KISConfig":
         if yaml_file is None:
-            yaml_file = os.path.join(
-                os.path.expanduser("~"), "KIS", "config", "config.yaml"
-            )
+            yaml_file = Path("~").expanduser() / "KIS" / "config" / "config.yaml"
 
-        logger.info(f"Loading KIS configuration from: {yaml_file}...")
+        logger.info("Loading KIS configuration from: %s...", yaml_file)
         if not is_paper:
             logger.info("Running in prod mode")
         else:
             logger.info("Running in paper mode")
 
-        if not os.path.exists(yaml_file):
-            raise FileNotFoundError(f"Config file ({yaml_file}) not found")
+        if not Path(yaml_file).is_file():
+            err = f"Config file ('{yaml_file}') not found"
+            logger.error(err)
+            raise FileNotFoundError(err)
 
         with open(yaml_file, encoding="UTF-8") as f:
             cfg = yaml.load(f, Loader=yaml.SafeLoader)
 
         if not cfg:
-            raise ValueError(f"Config file ({yaml_file}) is empty")
+            err = f"Config file ({yaml_file}) is empty"
+            logger.error(err)
+            raise ValueError(err)
 
         if not is_paper:
             required_keys = [
@@ -84,16 +86,19 @@ class KISConfig:
             "my_paper_stock",
             "my_paper_future",
             "my_prod",
-            "user_agent",
         ]
 
         missing_keys = [k for k in required_keys if k not in cfg]
         if missing_keys:
-            raise ValueError(f"Missing required config keys: {missing_keys}")
+            err = f"Missing required config keys: {missing_keys}"
+            logger.error(err)
+            raise ValueError(err)
 
         disallowed_keys = [k for k in cfg if k not in allowed_keys]
         if disallowed_keys:
-            raise ValueError(f"Found illegal config keys: {disallowed_keys}")
+            err = f"Found illegal config keys: {disallowed_keys}"
+            logger.error(err)
+            raise ValueError(err)
 
-        logger.debug(f"Config loaded successfully from {yaml_file}")
+        logger.debug("Config loaded successfully from %s", yaml_file)
         return cls(**cfg | {"is_paper": is_paper})
