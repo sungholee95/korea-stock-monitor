@@ -55,14 +55,6 @@ class KISAuth:
             "content-type": "utf-8",
         }
 
-    def _get_base_url(self) -> str:
-        """Get API base URL for the current environment."""
-        return self.config.url_prod if not self.is_paper else self.config.url_paper
-
-    def _get_ws_base_url(self) -> str:
-        """Get WebSocket base URL for the current environment."""
-        return self.config.ws_prod if not self.is_paper else self.config.ws_paper
-
     def _get_credentials(self) -> tuple[str, str]:
         """Retreive app key and app secret from the Credentials Manager.
 
@@ -97,7 +89,7 @@ class KISAuth:
     def _acquire_access_token(self) -> AccessToken:
         logger.info("Acquiring new access token")
 
-        url = f"{self._get_base_url()}/oauth2/tokenP"
+        url = f"{self.get_rest_base_url()}/oauth2/tokenP"
         app_key, app_sec = self._get_credentials()
         payload = {
             "grant_type": "client_credentials",
@@ -115,7 +107,7 @@ class KISAuth:
             data = response.json()
         except requests.RequestException as e:
             err_msg = f"Failed to acquire OAuth access token: {e}"
-            logger.exception(err_msg)
+            logger.error(err_msg)
             raise RuntimeError(err_msg) from e
 
         if response.status_code != 200:
@@ -148,7 +140,7 @@ class KISAuth:
     def _acquire_ws_approval_key(self) -> WSApprovalKey:
         logger.info("Acquiring new WebSocket approval key")
 
-        url = f"{self._get_base_url()}/oauth2/Approval"
+        url = f"{self.get_rest_base_url()}/oauth2/Approval"
         app_key, app_sec = self._get_credentials()
         payload = {
             "grant_type": "client_credentials",
@@ -185,6 +177,14 @@ class KISAuth:
         logger.debug("Successfully acquired new WebSocket approval key")
 
         return approval_key
+
+    def get_rest_base_url(self) -> str:
+        """Get API base URL for the current environment."""
+        return self.config.url_prod if not self.is_paper else self.config.url_paper
+
+    def get_ws_base_url(self) -> str:
+        """Get WebSocket base URL for the current environment."""
+        return self.config.ws_prod if not self.is_paper else self.config.ws_paper
 
     def get_access_token(self) -> AccessToken:
         # Return cached token if valid
@@ -272,6 +272,7 @@ class KISAuth:
         headers["authorization"] = f"{token.token_type} {token.access_token}"
         headers["appkey"] = appkey
         headers["appsecret"] = appsec
+        headers["custtype"] = "P"
         return headers
 
     def get_ws_headers(self) -> dict[str, str]:
