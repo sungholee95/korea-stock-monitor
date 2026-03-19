@@ -217,7 +217,6 @@ class _KISRestClient:
 
 class _KISWebSocketClient:
     def __init__(self, auth: KISAuth, rate_limit_delay):
-        raise NotImplementedError("WebSocket client not yet implemented")
         logger.info(
             f"Initializing _KISWebSocketClient with rate limit delay: {rate_limit_delay}s"
         )
@@ -229,6 +228,8 @@ class _KISWebSocketClient:
         self.msg_queue = []  # ??? something like this maybe?
 
     def subscribe(self, endpoint):
+        raise NotImplementedError("WebSocket client not yet implemented")
+
         logger.info(f"Subscribing to WebSocket endpoint: {endpoint.name}")
         if len(self._subscribed) == 40:
             err_msg = (
@@ -276,3 +277,6 @@ class KISClient:
     def start(self):
         logger.info("Starting KISClient")
         pass
+
+    def refresh_all_rest(self):
+        return self.rest_client.refresh_all()
