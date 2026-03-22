@@ -155,7 +155,7 @@ class BaseRestResponseOutput(ABC):
     )```
     """
 
-    output_raw: list[dict[str, str]]
+    output_raw: dict[str, str] | list[dict[str, str]]
 
     @abstractmethod
     def __post_init__(self):
