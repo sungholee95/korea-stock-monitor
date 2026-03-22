@@ -1,6 +1,6 @@
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 import keyring
@@ -30,7 +30,7 @@ class WSApprovalKey:
 
     key: str
     issued_at: datetime
-    expires_at: datetime = None  # pyright: ignore[reportAssignmentType]
+    expires_at: datetime = field(init=False)
 
     def __post_init__(self):
         # expiration date not given by API, so we calculate it
@@ -73,8 +73,8 @@ class KISAuth:
             f"Retrieving credentials from keyring: kis@{app_key_name}, {app_sec_name}"
         )
 
-        app_key = keyring.get_password("kis", app_key_name)  # pyright: ignore[reportArgumentType]
-        app_sec = keyring.get_password("kis", app_sec_name)  # pyright: ignore[reportArgumentType]
+        app_key = keyring.get_password("kis", app_key_name)  # ty:ignore[invalid-argument-type]
+        app_sec = keyring.get_password("kis", app_sec_name)  # ty:ignore[invalid-argument-type]
 
         if not (app_key and app_sec):
             err_msg = (
@@ -189,7 +189,7 @@ class KISAuth:
     def get_access_token(self) -> AccessToken:
         # Return cached token if valid
         if self._access_token and self._access_token.is_valid():
-            logger.info("Using cached token")
+            logger.info("Using cached token issued")
             return self._access_token
 
         # Return saved token from credentials manger, if still valid
@@ -246,7 +246,6 @@ class KISAuth:
                 self._ws_approval_key = WSApprovalKey(
                     saved_key,
                     issued_at=expires_at - timedelta(days=1),
-                    expires_at=expires_at,
                 )
                 return self._ws_approval_key
             else:
@@ -272,7 +271,6 @@ class KISAuth:
         headers["authorization"] = f"{token.token_type} {token.access_token}"
         headers["appkey"] = appkey
         headers["appsecret"] = appsec
-        headers["custtype"] = "P"
         return headers
 
     def get_ws_headers(self) -> dict[str, str]:

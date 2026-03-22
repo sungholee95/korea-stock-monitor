@@ -1,0 +1,16 @@
+# Import endpoint modules to trigger auto-registration
+from . import volume_rank  # noqa: F401
+from ._base import RestRequest, RestResponse
+from ._common import (
+    KISEndpoint,
+    Method,
+    get_request_spec,
+)
+
+__all__ = [
+    "KISEndpoint",
+    "get_request_spec",
+    "Method",
+    "RestRequest",
+    "RestResponse",
+]
