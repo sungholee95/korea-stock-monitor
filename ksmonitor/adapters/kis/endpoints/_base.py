@@ -117,6 +117,11 @@ class BaseRestResponse(ABC):
         self.msg_cd: str = body["msg_cd"]
         self.msg1: str = body["msg1"]
 
+        if self.is_ok():
+            logger.debug(
+                f"Successful response for endpoint {self._endpoint.name!r} "
+                f"(tr_id={self.tr_id!r}): rt_cd={self.rt_cd}, msg_cd={self.msg_cd}, msg1={self.msg1}"
+            )
         if not self.is_ok():
             err_msg = (
                 f"Received KIS API error (오류코드 {self.msg_cd!r}: {self.msg1}) "
@@ -155,7 +160,26 @@ class BaseRestResponseOutput(ABC):
     @abstractmethod
     def __post_init__(self):
         """Parse raw output into typed fields. Should be implemented by each subclass."""
-        pass
+        raise NotImplementedError()
+
+    def _check_keys(self):
+        """KIS API responses sometimes have missing or extra keys
+        compared to the documented schema. For now, just log any discrepancies.
+        """
+        actual = (
+            self.output_raw.keys()
+            if isinstance(self.output_raw, dict)
+            else self.output_raw[0].keys()
+        )
+        expected = {f.name for f in fields(self) if f.metadata.get("ko")}
+        unexpected = expected - actual
+        missing = actual - expected
+        if missing:
+            logger.warning(f"Missing keys in schema: {missing}")
+        if unexpected:
+            logger.warning(f"Unexpected keys in output: {unexpected}")
+
+        return unexpected, missing
 
     @classmethod
     def descriptions_ko(cls) -> dict[str, str]:
@@ -167,3 +191,10 @@ class BaseRestResponseOutput(ABC):
                 descriptions[f.name] = f.metadata["ko"]
 
         return descriptions
+
+    def build_table(self):
+        table = {}
+        for f in fields(self):
+            if "ko" in f.metadata:
+                table[f.metadata["ko"]] = getattr(self, f.name)
+        return table

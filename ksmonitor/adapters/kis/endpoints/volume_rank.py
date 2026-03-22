@@ -74,6 +74,8 @@ class VolumeRankResponseOutput(BaseRestResponseOutput):
     )
 
     def __post_init__(self):
+        unexpected, missing = self._check_keys()
+
         for item in self.output_raw:
             self.hts_kor_isnm.append(item["hts_kor_isnm"])
             self.mksc_shrn_iscd.append(item["mksc_shrn_iscd"])

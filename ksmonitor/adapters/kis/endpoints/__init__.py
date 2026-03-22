@@ -1,5 +1,8 @@
-# Import endpoint modules to trigger auto-registration
-from . import volume_rank  # noqa: F401
+from . import (
+    # Import endpoint modules to trigger auto-registration
+    inquire_price,  # noqa: F401
+    volume_rank,  # noqa: F401
+)
 from ._base import RestRequest, RestResponse
 from ._common import (
     KISEndpoint,
