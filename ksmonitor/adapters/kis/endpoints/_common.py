@@ -110,3 +110,7 @@ def get_request_spec(endpoint: KISEndpoint) -> type[BaseRestRequest]:
         err = f"No request class registered for endpoint {endpoint.tr_id!r} ({endpoint.description_ko})"
         logger.error(err)
         raise
+
+
+class EndpointError(RuntimeError):
+    pass

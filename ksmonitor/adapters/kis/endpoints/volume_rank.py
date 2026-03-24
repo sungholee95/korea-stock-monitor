@@ -9,7 +9,7 @@ from ._base import (
 from ._common import KISEndpoint
 
 
-@dataclass
+@dataclass(repr=False)
 class VolumeRankResponseOutput(BaseRestResponseOutput):
     """거래량순위[v1_국내주식-047] response body output"""
 

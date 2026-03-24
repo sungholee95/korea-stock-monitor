@@ -9,7 +9,7 @@ from ._base import (
 from ._common import KISEndpoint
 
 
-@dataclass
+@dataclass(repr=False)
 class InquirePriceResponseOutput(BaseRestResponseOutput):
     """주식현재가 시세[v1_국내주식-008] response body output"""
 
