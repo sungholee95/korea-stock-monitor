@@ -3,7 +3,7 @@ from . import (
     inquire_price,  # noqa: F401
     volume_rank,  # noqa: F401
 )
-from ._base import RestRequest, RestResponse
+from ._base import RestRequest, RestResponse, RestResponseOutput
 from ._common import (
     KISEndpoint,
     Method,
@@ -16,4 +16,5 @@ __all__ = [
     "Method",
     "RestRequest",
     "RestResponse",
+    "RestResponseOutput",
 ]

@@ -101,7 +101,8 @@ class VolumeRankResponseOutput(BaseRestResponseOutput):
 @dataclass(init=False)
 class VolumeRankResponse(BaseRestResponse):
     _endpoint: ClassVar[KISEndpoint] = KISEndpoint.VOLUME_RANK_REST
-    _output_schema: ClassVar[type[BaseRestResponseOutput]] = VolumeRankResponseOutput
+    _output_schema: ClassVar[type[VolumeRankResponseOutput]] = VolumeRankResponseOutput
+    output: VolumeRankResponseOutput
 
 
 @dataclass(kw_only=True)

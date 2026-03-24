@@ -14,9 +14,9 @@ if TYPE_CHECKING:
     from websockets.asyncio.client import ClientConnection
 
     from ..adapters.kis.auth import KISAuth
-    from ..adapters.kis.endpoints import KISEndpoint, RestResponse
+    from ..adapters.kis.endpoints import KISEndpoint, RestRequest, RestResponse
 
-    type RestRequestType = type[RestResponse]
+    type RestRequestType = type[RestRequest]
 
 
 class Subscription:
@@ -140,7 +140,7 @@ class _KISWebSocketClient:
         self._subscribed: list[KISEndpoint] = []
         self.msg_queue = []  # ??? something like this maybe?
 
-    def subscribe(self, endpoint):
+    def subscribe(self, endpoint: KISEndpoint):
         raise NotImplementedError("WebSocket client not yet implemented")
 
         logger.info(f"Subscribing to WebSocket endpoint: {endpoint.name}")

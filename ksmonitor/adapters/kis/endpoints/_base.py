@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 type RestRequest = BaseRestRequest
 type RestResponse = BaseRestResponse
+type RestResponseOutput = BaseRestResponseOutput
 
 
 @dataclass(kw_only=True)

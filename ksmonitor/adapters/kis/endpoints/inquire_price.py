@@ -272,7 +272,10 @@ class InquirePriceResponseOutput(BaseRestResponseOutput):
 @dataclass(init=False)
 class InquirePriceResponse(BaseRestResponse):
     _endpoint: ClassVar[KISEndpoint] = KISEndpoint.INQUIRE_PRICE_REST
-    _output_schema: ClassVar[type[BaseRestResponseOutput]] = InquirePriceResponseOutput
+    _output_schema: ClassVar[type[InquirePriceResponseOutput]] = (
+        InquirePriceResponseOutput
+    )
+    output: InquirePriceResponseOutput
 
 
 @dataclass(kw_only=True)
