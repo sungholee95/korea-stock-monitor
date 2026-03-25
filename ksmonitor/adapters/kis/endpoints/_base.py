@@ -1,6 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
+from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar
 
 from requests import HTTPError
@@ -36,6 +37,7 @@ class BaseRestResponseOutput(ABC):
     """
 
     output_raw: dict[str, str] | list[dict[str, str]]
+    polled_at: datetime = field(default_factory=lambda: datetime.now(), init=False)
 
     @abstractmethod
     def __post_init__(self):
