@@ -2,15 +2,15 @@ from dataclasses import dataclass, field
 from typing import ClassVar
 
 from ._base import (
-    BaseRestRequest,
-    BaseRestResponse,
-    BaseRestResponseOutput,
+    KISBaseRestRequest,
+    KISBaseRestResponse,
+    KISBaseRestResponseOutput,
 )
 from ._common import KISEndpoint
 
 
 @dataclass(repr=False)
-class InquirePriceResponseOutput(BaseRestResponseOutput):
+class InquirePriceResponseOutput(KISBaseRestResponseOutput):
     """주식현재가 시세[v1_국내주식-008] response body output"""
 
     output_raw: dict[str, str]  # single object, not list
@@ -270,7 +270,7 @@ class InquirePriceResponseOutput(BaseRestResponseOutput):
 
 
 @dataclass(init=False)
-class InquirePriceResponse(BaseRestResponse):
+class InquirePriceResponse(KISBaseRestResponse):
     _endpoint: ClassVar[KISEndpoint] = KISEndpoint.INQUIRE_PRICE_REST
     _output_schema: ClassVar[type[InquirePriceResponseOutput]] = (
         InquirePriceResponseOutput
@@ -279,7 +279,7 @@ class InquirePriceResponse(BaseRestResponse):
 
 
 @dataclass(kw_only=True)
-class InquirePriceRequest(BaseRestRequest):
+class InquirePriceRequest(KISBaseRestRequest):
     """주식현재가 시세[v1_국내주식-008]
     https://apiportal.koreainvestment.com/apiservice-apiservice?/uapi/domestic-stock/v1/quotations/inquire-price
     """

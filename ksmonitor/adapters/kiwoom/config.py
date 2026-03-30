@@ -10,21 +10,19 @@ from .._base.config import Config
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CONFIG_PATH = Path("~").expanduser() / ".ksmonitor" / "config" / "kis.yaml"
+_DEFAULT_CONFIG_PATH = Path("~").expanduser() / ".ksmonitor" / "config" / "kiwoom.yaml"
 
 
 @dataclass(kw_only=True)
-class KISConfig(Config):
+class KiwoomConfig(Config):
     # paper (모의) mode
     is_paper: bool
-    my_htsid: str
 
     # required if not is_paper
     my_app_key_name: str | None = None
     my_app_sec_name: str | None = None
     my_acct_stock: str | None = None
     my_acct_future: str | None = None
-    my_prod: str
 
     # required if is_paper
     my_paper_app_key_name: str | None = None
@@ -32,16 +30,16 @@ class KISConfig(Config):
     my_paper_stock: str | None = None
     my_paper_future: str | None = None
 
-    url_prod = "https://openapi.koreainvestment.com:9443"
-    url_paper = "https://openapivts.koreainvestment.com:29443"
-    ws_prod = "wss://ops.koreainvestment.com:21000"
-    ws_paper = "wss://ops.koreainvestment.com:31000"
+    url_prod = "https://api.kiwoom.com"
+    url_paper = "https://mockapi.kiwoom.com"
+    ws_prod = "wss://api.kiwoom.com:10000"
+    ws_paper = "wss://mockapi.kiwoom.com:10000"
 
     @classmethod
     def from_yaml(
         cls, *, yaml_file: Path = _DEFAULT_CONFIG_PATH, is_paper: bool = False
-    ) -> KISConfig:
-        logger.info("Loading KIS configuration from: %s...", yaml_file)
+    ) -> KiwoomConfig:
+        logger.info("Loading Kiwoom configuration from: %s...", yaml_file)
         if not is_paper:
             logger.info("Running in prod mode")
         else:
@@ -62,26 +60,21 @@ class KISConfig(Config):
 
         if not is_paper:
             required_keys = [
-                "my_htsid",
                 "my_app_key_name",
                 "my_app_sec_name",
                 "my_acct_stock",
                 "my_acct_future",
-                "my_prod",
             ]
         else:
             required_keys = [
-                "my_htsid",
                 "my_paper_app_key_name",
                 "my_paper_app_sec_name",
                 "my_paper_stock",
                 "my_paper_future",
-                "my_prod",
             ]
 
         # Only let allowed keys to be used to prevent eg. API urls from being hijacked
         allowed_keys = [
-            "my_htsid",
             "my_app_key_name",
             "my_app_sec_name",
             "my_acct_stock",
@@ -90,7 +83,6 @@ class KISConfig(Config):
             "my_paper_app_sec_name",
             "my_paper_stock",
             "my_paper_future",
-            "my_prod",
         ]
 
         missing_keys = [k for k in required_keys if k not in cfg]

@@ -1,109 +1,158 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, AsyncGenerator
 
 import requests
 
-from ..adapters.kis.endpoints import Method, get_request_spec
+from ..adapters._base.endpoints import Endpoint, Method
+from .datastore import DataStore
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from websockets.asyncio.client import ClientConnection
 
-    from ..adapters.kis.auth import KISAuth
-    from ..adapters.kis.endpoints import KISEndpoint, RestRequest, RestResponse
+    from ..adapters._base.auth import Auth
+    from ..adapters.kis.endpoints import KISRestRequest, KISRestResponse
+    from ..adapters.kiwoom.endpoints import KiwoomRestRequest, KiwoomRestResponse
 
+    type RestRequest = KISRestRequest | KiwoomRestRequest
+    type RestResponse = KISRestResponse | KiwoomRestResponse
     type RestRequestType = type[RestRequest]
+
+
+_DEFAULT_DATA_PATH = Path("~").expanduser() / ".ksmonitor" / "data" / "datastore.db"
 
 
 class Subscription:
     def __init__(
         self,
         request_spec: RestRequestType,
-        auth: KISAuth,
+        auth: Auth,
         *,
         query_params: dict[str, str] | None = None,
     ) -> None:
         logger.debug(
-            f"Constructing `Subscription` for endpoint: {request_spec._endpoint.tr_id!r}"
+            f"Constructing `Subscription` for endpoint: {request_spec._endpoint.name!r}"
         )
 
         self.auth = auth
         self.query_params = query_params or {}
-        self.req = request_spec(auth=auth, **(query_params or {}))
-        if self.req.method not in (Method.GET, Method.WEBSOCKET):
-            # TODO: unsure if this is true?
-            raise ValueError("Only GET and WEBSOCKET endpoints can be subscribed to")
+        self.req = request_spec(auth=auth, **(query_params or {}))  # pyright: ignore[reportArgumentType]
 
         self.response_spec = request_spec._response_spec
 
     def execute(self) -> RestResponse:
-        logger.debug(f"Executing REST request for endpoint: {self.req.tr_id}")
+        logger.debug(
+            f"Executing REST request for endpoint: {self.req._endpoint.name!r}"
+        )
         try:
-            response = requests.request(
-                method=self.req.method.name,
-                url=f"{self.auth.get_rest_base_url()}{self.req.api_path}",
-                headers=self.req.headers(),
-                params=self.req.query_params(),
-                timeout=10,
+            if self.req.method == Method.GET:
+                raw_response = requests.get(
+                    url=f"{self.auth.get_rest_base_url()}{self.req.api_path}",
+                    headers=self.req.headers(),
+                    params=self.req.query_params(),
+                    timeout=10,
+                )
+            elif self.req.method == Method.POST:
+                raw_response = requests.post(
+                    url=f"{self.auth.get_rest_base_url()}{self.req.api_path}",
+                    headers=self.req.headers(),
+                    data=json.dumps(self.req.query_params()),
+                    timeout=10,
+                )
+            logger.debug(
+                f"Received response with status code: {raw_response.status_code}"
             )
-            logger.debug(f"Received response with status code: {response.status_code}")
+            raw_response.raise_for_status()
         except requests.RequestException as e:
-            err_msg = f"Failed to execute REST request for {self.req.tr_id}: {e}"
+            err_msg = (
+                f"Failed to execute REST request for {self.req._endpoint.name!r}: {e}"
+            )
             logger.exception(err_msg)
             raise
 
-        response = self.response_spec(response)
+        response = self.response_spec(raw_response)
         if response.has_next_page():
             # TODO: implement pagination auto-fetch logic
-            logger.debug(
-                f"Pagination detected (tr_cont={response.tr_cont!r}); "
-                f"pagination auto-fetch not yet implemented"
-            )
             raise NotImplementedError("Pagination auto-fetch not yet implemented")
 
         return response
 
 
-class _KISRestClient:
-    def __init__(self, auth: KISAuth, refresh_rate: int | float):
-        logger.info(f"Initializing _KISRestClient with refresh rate: {refresh_rate} s")
+class _RestClient:
+    def __init__(self, auth: Auth, refresh_rate: float):
+        logger.info(f"Initializing _RestClient with refresh rate: {refresh_rate} s")
         self.auth = auth
         self.refresh_rate = refresh_rate
         self._subscribed: dict[str, Subscription] = {}
 
-    async def poll(self) -> dict[str, RestResponse | None]:
-        await asyncio.sleep(self.refresh_rate)
-        return self.execute_all()
+    def _enforce_rate_limit(self):
+        n_subs = len(self._subscribed)
+        if n_subs == 0:
+            return
 
-    def execute_all(self) -> dict[str, RestResponse | None]:
-        responses: dict[str, RestResponse | None] = {}
+        rate = self.refresh_rate
+        if rate == 0:
+            err = "Refresh rate must be greater than 0"
+            logger.error(err)
+            raise ValueError(err)
+
+        calls_per_sec = n_subs / rate
+        if self.auth.config.is_paper:
+            if calls_per_sec > 2:
+                err_msg = (
+                    f"Rate limit exceeded: "
+                    f"{n_subs} subscriptions / {rate}s refresh rate "
+                    f"= {calls_per_sec:.2f} calls/s > 2/s"
+                )
+                raise ValueError(err_msg)
+
+        else:
+            if calls_per_sec > 20:
+                err_msg = (
+                    f"Rate limit exceeded: "
+                    f"{n_subs} subscriptions / {rate}s refresh rate "
+                    f"= {calls_per_sec:.2f} calls/s > 20/s"
+                )
+                raise ValueError(err_msg)
+
+    async def poll(self) -> AsyncGenerator[dict[str, RestResponse]]:
+        self._enforce_rate_limit()
+
+        while True:
+            response = self.execute_all()
+            await asyncio.sleep(self.refresh_rate)
+            yield response
+
+    def execute_all(self) -> dict[str, RestResponse]:
+        responses: dict[str, RestResponse] = {}
         for name, subscription in self._subscribed.items():
             try:
                 responses[name] = subscription.execute()
                 logger.debug(f"Executed subscription: {name}")
             except (requests.RequestException, ValueError) as e:
+                # TODO: improve error handling, depending on the type
                 logger.error(f"Failed to execute subscription {name}: {e}")
-                responses[name] = None
                 continue
 
         return responses
 
     def subscribe(
         self,
-        endpoint: KISEndpoint,
+        endpoint: Endpoint,
         *,
         name: str | None = None,
         query_params: dict[str, str] | None = None,
-        extra_headers: dict[str, str] | None = None,
-    ):
+    ) -> Subscription:
         name = name or endpoint.name
         logger.info(f"Subscribing to REST endpoint: {name}")
         logger.debug(f"Endpoint: {endpoint.value}, Query params: {query_params}")
-        request_spec = get_request_spec(endpoint)
+        request_spec: RestRequestType = endpoint.get_request_spec()  # pyright: ignore[reportAssignmentType]
 
         if request_spec._endpoint.method not in (Method.GET, Method.POST):
             err_msg = f"Endpoint is not a REST endpoint: {endpoint}"
@@ -117,8 +166,9 @@ class _KISRestClient:
         )
         self._subscribed[name] = subscription
         logger.info(f"Successfully subscribed to {name}")
+        return subscription
 
-    def unsubscribe(self, endpoint: KISEndpoint | str):
+    def unsubscribe(self, endpoint: Endpoint | str) -> Subscription | None:
         name = endpoint if isinstance(endpoint, str) else endpoint.name
         logger.info(f"Unsubscribing from REST endpoint: {name}")
         subscription = self._subscribed.pop(name, None)
@@ -127,20 +177,21 @@ class _KISRestClient:
         else:
             logger.debug(f"Subscription {name} not found")
 
+        return subscription
 
-class _KISWebSocketClient:
-    def __init__(self, auth: KISAuth, rate_limit_delay):
+
+class _WebSocketClient:
+    def __init__(self, auth: Auth, rate_limit_delay):
         logger.info(
-            f"Initializing _KISWebSocketClient with rate limit delay: {rate_limit_delay}s"
+            f"Initializing _WebSocketClient with rate limit delay: {rate_limit_delay}s"
         )
         self.auth = auth
         self._uri = auth.get_ws_base_url()
         logger.debug(f"WebSocket URI: {self._uri}")
         self._connection: ClientConnection | None = None
-        self._subscribed: list[KISEndpoint] = []
-        self.msg_queue = []  # ??? something like this maybe?
+        self._subscribed: list[Endpoint] = []
 
-    def subscribe(self, endpoint: KISEndpoint):
+    def subscribe(self, endpoint: Endpoint):
         raise NotImplementedError("WebSocket client not yet implemented")
 
         logger.info(f"Subscribing to WebSocket endpoint: {endpoint.name}")
@@ -152,45 +203,79 @@ class _KISWebSocketClient:
             raise ValueError(err_msg)
         logger.debug(f"Current WebSocket subscriptions: {len(self._subscribed)}/40")
 
-    def unsubscribe(self, endpoint: KISEndpoint):
+    def unsubscribe(self, endpoint: Endpoint):
         logger.info(f"Unsubscribing from WebSocket endpoint: {endpoint.name}")
         # generate unsubscription message and send to ws
         pass
 
 
-# TODO: this can be renamed to be general, not just KIS
-class KISClient:
-    def __init__(self, auth: KISAuth, rest_refresh_rate: int | float = 60):
-        logger.info(
-            f"Initializing KISClient with REST refresh rate: {rest_refresh_rate}s"
-        )
+class Client:
+    def __init__(
+        self,
+        auth: Auth,
+        rest_refresh_rate: int | float = 60,
+        data_path: Path = _DEFAULT_DATA_PATH,
+    ):
+        logger.info(f"Initializing Client with REST refresh rate: {rest_refresh_rate}s")
         self.auth = auth
-        self.rest_client = _KISRestClient(auth, rest_refresh_rate)
-        self.ws_client = _KISWebSocketClient(auth, rate_limit_delay=1)
+        self.data_path = data_path
+        self.rest_client = _RestClient(auth, rest_refresh_rate)
+        self.ws_client = _WebSocketClient(auth, rate_limit_delay=1)
+
         self._subscribed: dict[str, Subscription] = {}
-        self._subscribed |= self.rest_client._subscribed
+        self.datastores: dict[str, DataStore] = {}
 
-    def subscribe(self, endpoint: KISEndpoint, **kwargs):
-        logger.debug(f"KISClient.subscribe: {endpoint.name} via {endpoint.method.name}")
-        if endpoint.method == Method.GET:
-            return self.rest_client.subscribe(endpoint, **kwargs)
-        elif endpoint.method == Method.WEBSOCKET:
-            return self.ws_client.subscribe(endpoint)
-        else:
-            err_msg = (
-                f"Unsupported method {endpoint.method.name!r} for endpoint {endpoint}"
-            )
-            logger.error(err_msg)
-            raise ValueError(err_msg)
+    def subscribe(self, endpoint: Endpoint, name: str | None = None, **kwargs):
+        name = name or endpoint.name
 
-    def unsubscribe(self, endpoint: KISEndpoint | str):
+        match endpoint.method:
+            case Method.GET | Method.POST:
+                new_sub = self.rest_client.subscribe(endpoint, name=name, **kwargs)
+            case Method.WEBSOCKET:
+                raise NotImplementedError()
+                new_sub = self.ws_client.subscribe(endpoint)
+            case _:
+                err_msg = f"Unsupported method {endpoint.method.name!r} for endpoint {endpoint}"
+                logger.error(err_msg)
+                raise ValueError(err_msg)
+
+        self._subscribed[name] = new_sub
+        self.datastores[name] = DataStore.from_endpoint(
+            name, new_sub.response_spec._output_schema
+        )
+        logger.debug(f"Subscribed to {name!r} (via {endpoint.method.name!r})")
+
+    def unsubscribe(self, endpoint: Endpoint | str):
         name = endpoint if isinstance(endpoint, str) else endpoint.name
-        logger.info(f"KISClient.unsubscribe: {name}")
-        pass
+        logger.debug(f"Unsubscribing from {name!r}")
 
-    def start(self):
-        logger.info("Starting KISClient")
-        pass
+        unsubbed = self._subscribed.pop(name, None)
+        if unsubbed is not None:
+            if unsubbed.req.method in (Method.GET, Method.POST):
+                self.rest_client.unsubscribe(name)
+            elif unsubbed.req.method == Method.WEBSOCKET:
+                raise NotImplementedError()
+                self.ws_client.unsubscribe(name)
 
-    def execute_all_rest(self) -> dict[str, RestResponse | None]:
+            self.datastores.pop(name)
+            logger.debug(f"Unsubscribed from {name!r}")
+        else:
+            logger.debug(f"No subscription found for {name!r}")
+
+    async def start(self):
+        logger.info("Starting Client")
+        async for polled in self.rest_client.poll():
+            for name, response in polled.items():
+                self.datastores[name].update(response)
+                self.datastores[name].save_to_disk(self.data_path)
+
+            logger.debug("Received new data from REST client poll")
+
+    def save(self) -> None:
+        self.data_path.parent.mkdir(parents=True, exist_ok=True)
+        for store in self.datastores.values():
+            store.save_to_disk(self.data_path)
+        logger.info(f"Saved all datastores to `{self.data_path}`")
+
+    def execute_all_rest(self) -> dict[str, RestResponse]:
         return self.rest_client.execute_all()

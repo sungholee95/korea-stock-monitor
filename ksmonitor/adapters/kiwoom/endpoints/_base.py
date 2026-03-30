@@ -10,19 +10,19 @@ from ._common import REQUEST_REGISTRY
 if TYPE_CHECKING:
     from requests import Response
 
-    from ..auth import KISAuth
-    from ._common import KISEndpoint, Method
+    from ..auth import KiwoomAuth
+    from ._common import KiwoomEndpoint, Method
 
 logger = logging.getLogger(__name__)
 
-type KISRestRequest = KISBaseRestRequest
-type KISRestResponse = KISBaseRestResponse
-type KISRestResponseOutput = KISBaseRestResponseOutput
+type KiwoomRestRequest = KiwoomBaseRestRequest
+type KiwoomRestResponse = KiwoomBaseRestResponse
+type KiwoomRestResponseOutput = KiwoomBaseRestResponseOutput
 
 
 @dataclass(repr=False)
-class KISBaseRestResponseOutput(ABC):
-    """Base class for KIS REST API response outputs.
+class KiwoomBaseRestResponseOutput(ABC):
+    """Base class for Kiwoom REST API response outputs.
 
     Subclasses should define schema fields with metadata
     for Korean descriptions in the following format:
@@ -42,25 +42,6 @@ class KISBaseRestResponseOutput(ABC):
     def __post_init__(self):
         """Parse raw output into typed fields. Should be implemented by each subclass."""
         raise NotImplementedError()
-
-    def _check_keys(self):
-        """KIS API responses sometimes have missing or extra keys
-        compared to the documented schema. For now, just log any discrepancies.
-        """
-        actual = (
-            self.output_raw.keys()
-            if isinstance(self.output_raw, dict)
-            else self.output_raw[0].keys()
-        )
-        expected = {f.name for f in fields(self) if f.metadata.get("ko")}
-        unexpected = expected - actual
-        missing = actual - expected
-        if missing:
-            logger.warning(f"Missing keys in schema: {missing}")
-        if unexpected:
-            logger.warning(f"Unexpected keys in output: {unexpected}")
-
-        return unexpected, missing
 
     @classmethod
     def descriptions_ko(cls) -> dict[str, str]:
@@ -82,70 +63,69 @@ class KISBaseRestResponseOutput(ABC):
 
 
 @dataclass(init=False)
-class KISBaseRestResponse:
-    _endpoint: ClassVar[KISEndpoint]  # Set by each subclass
-    _output_schema: ClassVar[type[KISBaseRestResponseOutput]]  # Set by each subclass
+class KiwoomBaseRestResponse:
+    _endpoint: ClassVar[KiwoomEndpoint]  # Set by each subclass
+    _output_schema: ClassVar[type[KiwoomBaseRestResponseOutput]]  # Set by each subclass
+    _output_key: str = field(default="output", init=False)
 
     # headers
-    content_type: str
-    tr_id: str
-    tr_cont: str
+    api_id: str
+    cont_yn: str
+    next_key: str
 
     # body
-    rt_cd: str  # Result code: "0" = OK, else error
-    msg_cd: str  # Message code (error details)
-    msg1: str  # Message 1 (error description)
-    output: KISBaseRestResponseOutput
+    return_code: int  # Result code: 0 = OK, else error
+    return_msg: str  # Message 1 (error description)
+    output: KiwoomBaseRestResponseOutput
 
     def __init__(self, response: Response):
         headers = response.headers
-        self.content_type: str = headers["content-type"]
-        self.tr_id: str = headers["tr_id"]
-        self.tr_cont: str = headers.get("tr_cont", "")
+        self.api_id: str = headers["api-id"]
+        self.cont_yn: str = headers.get("cont-yn", "")
+        self.next_key: str = headers.get("next-key", "")
 
         body = response.json()
-        self.rt_cd: str = body["rt_cd"]
-        self.msg_cd: str = body["msg_cd"]
-        self.msg1: str = body["msg1"]
+        self.return_code: int = body["return_code"]
+        self.return_msg: str = body["return_msg"]
 
         if self.is_ok():
             logger.debug(
                 f"Successful response for endpoint "
-                f"{self._endpoint.name!r} ({self.tr_id!r})"
+                f"{self._endpoint.name!r} ({self.api_id!r})"
             )
         else:
             err_msg = (
-                f"Received KIS API error (오류코드 {self.msg_cd!r}: {self.msg1}) "
-                f"for endpoint {self._endpoint.name!r} (tr_id={self.tr_id!r})"
+                f"Received API error (오류코드 {self.return_code!r}: {self.return_msg}) "
+                f"for endpoint {self._endpoint.name!r} (api-id={self.api_id!r})"
             )
             logger.error(err_msg)
             raise EndpointError(err_msg)
 
-        output_raw = body["output"]
+        output_raw = body[self._output_key]
         self.output = self._output_schema(output_raw)
 
     def is_ok(self) -> bool:
-        return self.rt_cd == "0"
+        return self.return_code == 0
 
     def has_next_page(self) -> bool:
-        return self.tr_cont in ("M", "F")
+        return self.cont_yn == "Y"
 
 
 @dataclass(kw_only=True)
-class KISBaseRestRequest(ABC):
-    """Base class for KIS REST API requests.
+class KiwoomBaseRestRequest(ABC):
+    """Base class for Kiwoom REST API requests.
 
-    Subclasses must set `_endpoint` ClassVar to the corresponding `KISEndpoint`.
-    `authorization`, `appkey`, `appsecret`, and `content-type` are derived from KISAuth.
+    Subclasses must set `_endpoint` ClassVar to the corresponding `KiwoomEndpoint`.
+    `authorization`, `appkey`, `appsecret`, and `content-type` are derived from KiwoomAuth.
     """
 
-    _endpoint: ClassVar[KISEndpoint]  # Set by each subclass
-    _response_spec: ClassVar[type[KISBaseRestResponse]]  # Set by each subclass
+    _endpoint: ClassVar[KiwoomEndpoint]  # Set by each subclass
+    _response_spec: ClassVar[type[KiwoomBaseRestResponse]]  # Set by each subclass
 
-    auth: KISAuth = field(repr=False)
+    auth: KiwoomAuth = field(repr=False)
 
-    tr_cont: str | None = None
-    custtype: str = "P"
+    cont_yn: str = ""
+    next_key: str = ""
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -167,19 +147,18 @@ class KISBaseRestRequest(ABC):
         return self._endpoint.description_ko
 
     @property
-    def tr_id(self) -> str:
+    def api_id(self) -> str:
         """Transaction ID from the endpoint definition."""
-        return self._endpoint.tr_id
+        return self._endpoint.api_id
 
     def _base_headers(self) -> dict[str, str]:
         """Build base headers common to all REST requests."""
         headers = self.auth.get_rest_headers()
-        headers |= {
-            "tr_id": self.tr_id,
-            "custtype": self.custtype,
-        }
-        if self.tr_cont is not None:
-            headers["tr_cont"] = self.tr_cont
+        headers["api-id"] = self.api_id
+
+        if self.cont_yn:
+            headers["cont-yn"] = self.cont_yn
+            headers["next-key"] = self.next_key
 
         return headers
 

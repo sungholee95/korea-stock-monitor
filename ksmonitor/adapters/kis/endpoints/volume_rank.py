@@ -2,15 +2,15 @@ from dataclasses import dataclass, field
 from typing import ClassVar
 
 from ._base import (
-    BaseRestRequest,
-    BaseRestResponse,
-    BaseRestResponseOutput,
+    KISBaseRestRequest,
+    KISBaseRestResponse,
+    KISBaseRestResponseOutput,
 )
 from ._common import KISEndpoint
 
 
 @dataclass(repr=False)
-class VolumeRankResponseOutput(BaseRestResponseOutput):
+class VolumeRankResponseOutput(KISBaseRestResponseOutput):
     """거래량순위[v1_국내주식-047] response body output"""
 
     output_raw: list[dict[str, str]]
@@ -99,14 +99,14 @@ class VolumeRankResponseOutput(BaseRestResponseOutput):
 
 
 @dataclass(init=False)
-class VolumeRankResponse(BaseRestResponse):
+class VolumeRankResponse(KISBaseRestResponse):
     _endpoint: ClassVar[KISEndpoint] = KISEndpoint.VOLUME_RANK_REST
     _output_schema: ClassVar[type[VolumeRankResponseOutput]] = VolumeRankResponseOutput
     output: VolumeRankResponseOutput
 
 
 @dataclass(kw_only=True)
-class VolumeRankRequest(BaseRestRequest):
+class VolumeRankRequest(KISBaseRestRequest):
     """거래량순위[v1_국내주식-047]
     https://apiportal.koreainvestment.com/apiservice-apiservice?/uapi/domestic-stock/v1/quotations/volume-rank
     """
@@ -130,7 +130,6 @@ class VolumeRankRequest(BaseRestRequest):
     fid_vol_cnt: str = ""  # 거래량 수 ("" 이면 전체)
 
     def headers(self) -> dict[str, str]:
-        """Headers filled by Auth class. Call Auth.get_rest_headers() to populate."""
         headers = super()._base_headers()
         return headers
 

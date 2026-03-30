@@ -1,30 +1,25 @@
 from __future__ import annotations
 
 import logging
-from enum import Enum, auto
 from typing import TYPE_CHECKING
 
+from ..._base.endpoints import Endpoint, Method
+
 if TYPE_CHECKING:
-    from ._base import BaseRestRequest
+    from ._base import KISBaseRestRequest
 
 
 logger = logging.getLogger(__name__)
 
 
-class Method(Enum):
-    GET = auto()
-    POST = auto()
-    WEBSOCKET = auto()
-
-
-class KISEndpoint(Enum):
+class KISEndpoint(Endpoint):
     """KIS API endpoint definitions with metadata.
 
     Each endpoint member provides:
     - description_ko: Korean description of the endpoint
     - method: HTTP method (GET, POST) or WEBSOCKET
-    - tr_id: Transaction ID for the KIS API
-    - api_path: REST API path (auto-set to "/tryitout" for WebSocket)
+    - tr_id: Transaction ID
+    - api_path: API path (auto-set to "/tryitout" for WebSocket)
 
     Validation:
     - WebSocket: api_path must not be provided (auto-set)
@@ -85,32 +80,15 @@ class KISEndpoint(Enum):
         "/uapi/domestic-stock/v1/quotations/inquire-price",
     )
 
-    EXECUTED_PRICE_KRX_WS = (
-        "국내주식 실시간체결가(KRX) [실시간-003]",
-        Method.WEBSOCKET,
-        "H0STCNT0",
-    )
-
-    ASK_PRICE_KRX_WS = (
-        "국내주식 실시간호가 (KRX) [실시간-004]",
-        Method.WEBSOCKET,
-        "H0STASP0",
-    )
+    def get_request_spec(self) -> type[KISBaseRestRequest]:
+        try:
+            return REQUEST_REGISTRY[self]
+        except KeyError:
+            err = f"No request class registered for endpoint {self.tr_id!r} ({self.description_ko})"
+            logger.error(err)
+            raise
 
 
 # These get populated dynamically by the endpoint modules
 #  when their request/response classes are defined
-REQUEST_REGISTRY: dict[KISEndpoint, type[BaseRestRequest]] = {}
-
-
-def get_request_spec(endpoint: KISEndpoint) -> type[BaseRestRequest]:
-    try:
-        return REQUEST_REGISTRY[endpoint]
-    except KeyError:
-        err = f"No request class registered for endpoint {endpoint.tr_id!r} ({endpoint.description_ko})"
-        logger.error(err)
-        raise
-
-
-class EndpointError(RuntimeError):
-    pass
+REQUEST_REGISTRY: dict[KISEndpoint, type[KISBaseRestRequest]] = {}

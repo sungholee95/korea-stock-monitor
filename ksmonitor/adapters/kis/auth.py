@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import keyring
 import requests
 
+from .._base.auth import Auth
 from .config import KISConfig
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ class WSApprovalKey:
         return datetime.now() < self.expires_at
 
 
-class KISAuth:
+class KISAuth(Auth):
     def __init__(self, config: KISConfig):
         self.config = config
         self.is_paper = config.is_paper
@@ -73,8 +74,8 @@ class KISAuth:
             f"Retrieving credentials from keyring: kis@{app_key_name}, {app_sec_name}"
         )
 
-        app_key = keyring.get_password("kis", app_key_name)  # ty:ignore[invalid-argument-type]
-        app_sec = keyring.get_password("kis", app_sec_name)  # ty:ignore[invalid-argument-type]
+        app_key = keyring.get_password("kis", app_key_name)  # pyright: ignore[reportArgumentType]
+        app_sec = keyring.get_password("kis", app_sec_name)  # pyright: ignore[reportArgumentType]
 
         if not (app_key and app_sec):
             err_msg = (
@@ -109,11 +110,6 @@ class KISAuth:
             err_msg = f"Failed to acquire OAuth access token: {e}"
             logger.error(err_msg)
             raise RuntimeError(err_msg) from e
-
-        if response.status_code != 200:
-            err_msg = f"Token acquisition failed: {data.get('msg1', 'Unknown error')}"
-            logger.error(err_msg)
-            raise RuntimeError(err_msg)
 
         expires_at = datetime.strptime(
             data["access_token_token_expired"], "%Y-%m-%d %H:%M:%S"
