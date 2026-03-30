@@ -125,9 +125,13 @@ class _RestClient:
         self._enforce_rate_limit()
 
         while True:
-            response = self.execute_all()
-            await asyncio.sleep(self.refresh_rate)
-            yield response
+            try:
+                response = self.execute_all()
+                await asyncio.sleep(self.refresh_rate)
+                yield response
+            except asyncio.CancelledError:
+                logger.info("Client stopped by user (KeyboardInterrupt)")
+                break
 
     def execute_all(self) -> dict[str, RestResponse]:
         responses: dict[str, RestResponse] = {}
