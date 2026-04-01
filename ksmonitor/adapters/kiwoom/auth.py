@@ -6,7 +6,6 @@ from datetime import datetime
 import keyring
 import requests
 
-from .._base.auth import Auth
 from .config import KiwoomConfig
 
 logger = logging.getLogger(__name__)
@@ -28,7 +27,7 @@ class AccessToken:
         return datetime.now() < self.expires_at
 
 
-class KiwoomAuth(Auth):
+class KiwoomAuth:
     def __init__(self, config: KiwoomConfig):
         self.config = config
         self.is_paper = config.is_paper

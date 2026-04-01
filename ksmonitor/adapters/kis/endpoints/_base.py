@@ -1,17 +1,20 @@
+from __future__ import annotations
+
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar
 
-from ..._base.endpoints import EndpointError
+from ksmonitor.adapters._shared import EndpointError, Method
+
 from ._common import REQUEST_REGISTRY
 
 if TYPE_CHECKING:
     from requests import Response
 
     from ..auth import KISAuth
-    from ._common import KISEndpoint, Method
+    from ._common import KISEndpoint
 
 logger = logging.getLogger(__name__)
 
@@ -194,3 +197,17 @@ class KISBaseRestRequest(ABC):
     @abstractmethod
     def query_params(self) -> dict[str, str]:
         raise NotImplementedError()
+
+    def build_request(self) -> dict:
+        if self.method == Method.GET:
+            return {
+                "method": self.method.name,
+                "url": f"{self.auth.get_rest_base_url()}{self.api_path}",
+                "headers": self.headers(),
+                "params": self.query_params(),
+                "timeout": 10,
+            }
+        elif self.method == Method.POST:
+            raise NotImplementedError()
+        else:
+            raise ValueError(f"Unsupported HTTP method: {self.method}")

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from enum import Enum
 from typing import TYPE_CHECKING
 
-from ..._base.endpoints import Endpoint, Method
+from ksmonitor.adapters._shared import Method
 
 if TYPE_CHECKING:
     from ._base import KISBaseRestRequest
@@ -12,7 +13,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class KISEndpoint(Endpoint):
+class KISEndpoint(Enum):
     """KIS API endpoint definitions with metadata.
 
     Each endpoint member provides:

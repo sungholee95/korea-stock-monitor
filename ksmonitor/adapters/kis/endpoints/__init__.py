@@ -4,9 +4,7 @@ from . import (
     volume_rank,  # noqa: F401
 )
 from ._base import KISRestRequest, KISRestResponse, KISRestResponseOutput
-from ._common import (
-    KISEndpoint,
-)
+from ._common import KISEndpoint
 
 __all__ = [
     "KISEndpoint",

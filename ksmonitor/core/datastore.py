@@ -4,12 +4,10 @@ import logging
 import sqlite3
 from dataclasses import fields
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import polars as pl
 
-if TYPE_CHECKING:
-    from ..adapters.kis.endpoints import RestResponse, RestResponseOutput
+from .protocols import RestResponseOutput
 
 logger = logging.getLogger(__name__)
 
@@ -23,17 +21,20 @@ class DataStore:
         self._rows_saved: int = 0
 
     @classmethod
-    def from_endpoint(cls, name: str, endpoint_schema: type[RestResponseOutput]):
+    def from_endpoint(
+        cls, name: str, endpoint_schema: type[RestResponseOutput]
+    ) -> DataStore:
         new_store = cls(name)
         new_store._ko_fields = [
             f for f in fields(endpoint_schema) if f.metadata.get("ko")
         ]
+
         new_store._columns = ["polled_at", *(f.name for f in new_store._ko_fields)]
         new_store._rows = []
         return new_store
 
-    def update(self, new_response: RestResponse) -> None:
-        output = new_response.output
+    def update(self, new_output: RestResponseOutput) -> None:
+        output = new_output
         polled_at = output.polled_at.isoformat()
 
         if isinstance(output.output_raw, dict):

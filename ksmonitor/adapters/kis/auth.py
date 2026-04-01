@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 import keyring
 import requests
 
-from .._base.auth import Auth
 from .config import KISConfig
 
 logger = logging.getLogger(__name__)
@@ -41,7 +40,7 @@ class WSApprovalKey:
         return datetime.now() < self.expires_at
 
 
-class KISAuth(Auth):
+class KISAuth:
     def __init__(self, config: KISConfig):
         self.config = config
         self.is_paper = config.is_paper

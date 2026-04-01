@@ -1,17 +1,21 @@
+from __future__ import annotations
+
+import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar
 
-from ..._base.endpoints import EndpointError
+from ksmonitor.adapters._shared import EndpointError, Method
+
 from ._common import REQUEST_REGISTRY
 
 if TYPE_CHECKING:
     from requests import Response
 
     from ..auth import KiwoomAuth
-    from ._common import KiwoomEndpoint, Method
+    from ._common import KiwoomEndpoint
 
 logger = logging.getLogger(__name__)
 
@@ -173,3 +177,22 @@ class KiwoomBaseRestRequest(ABC):
     @abstractmethod
     def query_params(self) -> dict[str, str]:
         raise NotImplementedError()
+
+    def build_request(
+        self, previous_response: KiwoomBaseRestResponse | None = None
+    ) -> dict:
+        """Build the request payload (headers, query params, body) for this request.
+        If `previous_response.has_next_page()`, include pagination headers.
+        """
+
+        if previous_response and previous_response.has_next_page():
+            self.cont_yn = "Y"
+            self.next_key = previous_response.next_key
+
+        return {
+            "method": self.method.name,
+            "url": f"{self.auth.get_rest_base_url()}{self.api_path}",
+            "headers": self.headers(),
+            "data": json.dumps(self.query_params()),
+            "timeout": 10,
+        }

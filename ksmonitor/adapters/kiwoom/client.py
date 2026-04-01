@@ -1,97 +1,82 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, AsyncGenerator
 
 import requests
 
-from ..adapters._base.endpoints import Endpoint, Method
-from .datastore import DataStore
+from ksmonitor.adapters._shared import Method
+from ksmonitor.core.datastore import DataStore
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from websockets.asyncio.client import ClientConnection
 
-    from ..adapters._base.auth import Auth
-    from ..adapters.kis.endpoints import KISRestRequest, KISRestResponse
-    from ..adapters.kiwoom.endpoints import KiwoomRestRequest, KiwoomRestResponse
-
-    type RestRequest = KISRestRequest | KiwoomRestRequest
-    type RestResponse = KISRestResponse | KiwoomRestResponse
-    type RestRequestType = type[RestRequest]
+    from .auth import KiwoomAuth
+    from .endpoints import KiwoomEndpoint, KiwoomRestRequest, KiwoomRestResponse
 
 
 _DEFAULT_DATA_PATH = Path("~").expanduser() / ".ksmonitor" / "data" / "datastore.db"
 
 
-class Subscription:
+class KiwoomSubscription:
     def __init__(
         self,
-        request_spec: RestRequestType,
-        auth: Auth,
+        request_spec: type[KiwoomRestRequest],
+        auth: KiwoomAuth,
         *,
         query_params: dict[str, str] | None = None,
     ) -> None:
         logger.debug(
-            f"Constructing `Subscription` for endpoint: {request_spec._endpoint.name!r}"
+            f"Constructing `KiwoomSubscription` for endpoint: {request_spec._endpoint.name!r}"
         )
 
         self.auth = auth
         self.query_params = query_params or {}
-        self.req = request_spec(auth=auth, **(query_params or {}))  # pyright: ignore[reportArgumentType]
-
+        self.req = request_spec(auth=auth, **self.query_params)  # pyright: ignore[reportArgumentType]
         self.response_spec = request_spec._response_spec
 
-    def execute(self) -> RestResponse:
+    def execute(self) -> KiwoomRestResponse:
         logger.debug(
-            f"Executing REST request for endpoint: {self.req._endpoint.name!r}"
+            f"Executing Kiwoom REST request for endpoint: {self.req._endpoint.name!r}"
         )
         try:
-            if self.req.method == Method.GET:
-                raw_response = requests.get(
-                    url=f"{self.auth.get_rest_base_url()}{self.req.api_path}",
-                    headers=self.req.headers(),
-                    params=self.req.query_params(),
-                    timeout=10,
-                )
-            elif self.req.method == Method.POST:
-                raw_response = requests.post(
-                    url=f"{self.auth.get_rest_base_url()}{self.req.api_path}",
-                    headers=self.req.headers(),
-                    data=json.dumps(self.req.query_params()),
-                    timeout=10,
-                )
+            raw_response = requests.request(**self.req.build_request())
             logger.debug(
                 f"Received response with status code: {raw_response.status_code}"
             )
             raw_response.raise_for_status()
-        except requests.RequestException as e:
+        except requests.RequestException as exc:
             err_msg = (
-                f"Failed to execute REST request for {self.req._endpoint.name!r}: {e}"
+                f"Failed to execute Kiwoom REST request for "
+                f"{self.req._endpoint.name!r}: {exc}"
             )
             logger.exception(err_msg)
             raise
 
         response = self.response_spec(raw_response)
         if response.has_next_page():
-            # TODO: implement pagination auto-fetch logic
-            raise NotImplementedError("Pagination auto-fetch not yet implemented")
+            logger.warning(
+                f"Pagination is not implemented yet for Kiwoom endpoint "
+                f"{self.req._endpoint.name!r}; returning the first page only"
+            )
 
         return response
 
 
-class _RestClient:
-    def __init__(self, auth: Auth, refresh_rate: float):
-        logger.info(f"Initializing _RestClient with refresh rate: {refresh_rate} s")
+class _KiwoomRestClient:
+    def __init__(self, auth: KiwoomAuth, refresh_rate: float):
+        logger.info(
+            f"Initializing _KiwoomRestClient with refresh rate: {refresh_rate} s"
+        )
         self.auth = auth
         self.refresh_rate = refresh_rate
-        self._subscribed: dict[str, Subscription] = {}
+        self._subscribed: dict[str, KiwoomSubscription] = {}
 
-    def _enforce_rate_limit(self):
+    def _enforce_rate_limit(self) -> None:
         n_subs = len(self._subscribed)
         if n_subs == 0:
             return
@@ -111,7 +96,6 @@ class _RestClient:
                     f"= {calls_per_sec:.2f} calls/s > 2/s"
                 )
                 raise ValueError(err_msg)
-
         else:
             if calls_per_sec > 20:
                 err_msg = (
@@ -121,7 +105,7 @@ class _RestClient:
                 )
                 raise ValueError(err_msg)
 
-    async def poll(self) -> AsyncGenerator[dict[str, RestResponse]]:
+    async def poll(self) -> AsyncGenerator[dict[str, KiwoomRestResponse | None], None]:
         self._enforce_rate_limit()
 
         while True:
@@ -133,37 +117,36 @@ class _RestClient:
                 logger.info("Client stopped by user (KeyboardInterrupt)")
                 break
 
-    def execute_all(self) -> dict[str, RestResponse]:
-        responses: dict[str, RestResponse] = {}
+    def execute_all(self) -> dict[str, KiwoomRestResponse | None]:
+        responses: dict[str, KiwoomRestResponse | None] = {}
         for name, subscription in self._subscribed.items():
             try:
                 responses[name] = subscription.execute()
                 logger.debug(f"Executed subscription: {name}")
-            except (requests.RequestException, ValueError) as e:
-                # TODO: improve error handling, depending on the type
-                logger.error(f"Failed to execute subscription {name}: {e}")
-                continue
+            except (requests.RequestException, ValueError) as exc:
+                logger.error(f"Failed to execute subscription {name}: {exc}")
+                responses[name] = None
 
         return responses
 
     def subscribe(
         self,
-        endpoint: Endpoint,
+        endpoint: KiwoomEndpoint,
         *,
         name: str | None = None,
         query_params: dict[str, str] | None = None,
-    ) -> Subscription:
+    ) -> KiwoomSubscription:
         name = name or endpoint.name
-        logger.info(f"Subscribing to REST endpoint: {name}")
+        logger.info(f"Subscribing to Kiwoom REST endpoint: {name}")
         logger.debug(f"Endpoint: {endpoint.value}, Query params: {query_params}")
-        request_spec: RestRequestType = endpoint.get_request_spec()  # pyright: ignore[reportAssignmentType]
+        request_spec = endpoint.get_request_spec()
 
         if request_spec._endpoint.method not in (Method.GET, Method.POST):
             err_msg = f"Endpoint is not a REST endpoint: {endpoint}"
             logger.error(err_msg)
             raise ValueError(err_msg)
 
-        subscription = Subscription(
+        subscription = KiwoomSubscription(
             request_spec,
             self.auth,
             query_params=query_params,
@@ -172,9 +155,9 @@ class _RestClient:
         logger.info(f"Successfully subscribed to {name}")
         return subscription
 
-    def unsubscribe(self, endpoint: Endpoint | str) -> Subscription | None:
+    def unsubscribe(self, endpoint: KiwoomEndpoint | str) -> KiwoomSubscription | None:
         name = endpoint if isinstance(endpoint, str) else endpoint.name
-        logger.info(f"Unsubscribing from REST endpoint: {name}")
+        logger.info(f"Unsubscribing from Kiwoom REST endpoint: {name}")
         subscription = self._subscribed.pop(name, None)
         if subscription:
             logger.info(f"Successfully unsubscribed from {name}")
@@ -184,62 +167,66 @@ class _RestClient:
         return subscription
 
 
-class _WebSocketClient:
-    def __init__(self, auth: Auth, rate_limit_delay):
+class _KiwoomWebSocketClient:
+    def __init__(self, auth: KiwoomAuth, rate_limit_delay: float):
         logger.info(
-            f"Initializing _WebSocketClient with rate limit delay: {rate_limit_delay}s"
+            f"Initializing _KiwoomWebSocketClient with rate limit delay: {rate_limit_delay}s"
         )
         self.auth = auth
         self._uri = auth.get_ws_base_url()
         logger.debug(f"WebSocket URI: {self._uri}")
         self._connection: ClientConnection | None = None
-        self._subscribed: list[Endpoint] = []
+        self._subscribed: list[KiwoomEndpoint] = []
 
-    def subscribe(self, endpoint: Endpoint):
-        raise NotImplementedError("WebSocket client not yet implemented")
+    def subscribe(self, endpoint: KiwoomEndpoint):
+        raise NotImplementedError("Kiwoom WebSocket client not yet implemented")
 
-        logger.info(f"Subscribing to WebSocket endpoint: {endpoint.name}")
-        if len(self._subscribed) == 40:
-            err_msg = (
-                f"Max 40 WebSocket subscriptions reached, cannot add {endpoint.name}"
-            )
-            logger.error(err_msg)
-            raise ValueError(err_msg)
-        logger.debug(f"Current WebSocket subscriptions: {len(self._subscribed)}/40")
-
-    def unsubscribe(self, endpoint: Endpoint):
-        logger.info(f"Unsubscribing from WebSocket endpoint: {endpoint.name}")
-        # generate unsubscription message and send to ws
-        pass
+    def unsubscribe(self, endpoint: KiwoomEndpoint):
+        logger.info(f"Unsubscribing from Kiwoom WebSocket endpoint: {endpoint.name}")
+        raise NotImplementedError("Kiwoom WebSocket client not yet implemented")
 
 
-class Client:
+class KiwoomClient:
     def __init__(
         self,
-        auth: Auth,
+        auth: KiwoomAuth,
         rest_refresh_rate: int | float = 60,
         data_path: Path = _DEFAULT_DATA_PATH,
     ):
-        logger.info(f"Initializing Client with REST refresh rate: {rest_refresh_rate}s")
+        logger.info(
+            f"Initializing KiwoomClient with REST refresh rate: {rest_refresh_rate}s"
+        )
         self.auth = auth
         self.data_path = data_path
-        self.rest_client = _RestClient(auth, rest_refresh_rate)
-        self.ws_client = _WebSocketClient(auth, rate_limit_delay=1)
+        self.rest_client = _KiwoomRestClient(auth, rest_refresh_rate)
+        self.ws_client = _KiwoomWebSocketClient(auth, rate_limit_delay=1)
 
-        self._subscribed: dict[str, Subscription] = {}
+        self._subscribed: dict[str, KiwoomSubscription] = {}
         self.datastores: dict[str, DataStore] = {}
 
-    def subscribe(self, endpoint: Endpoint, name: str | None = None, **kwargs):
+    def subscribe(
+        self,
+        endpoint: KiwoomEndpoint,
+        name: str | None = None,
+        *,
+        query_params: dict[str, str] | None = None,
+    ) -> None:
         name = name or endpoint.name
 
         match endpoint.method:
             case Method.GET | Method.POST:
-                new_sub = self.rest_client.subscribe(endpoint, name=name, **kwargs)
+                new_sub = self.rest_client.subscribe(
+                    endpoint,
+                    name=name,
+                    query_params=query_params,
+                )
             case Method.WEBSOCKET:
                 raise NotImplementedError()
-                new_sub = self.ws_client.subscribe(endpoint)
             case _:
-                err_msg = f"Unsupported method {endpoint.method.name!r} for endpoint {endpoint}"
+                err_msg = (
+                    f"Unsupported method {endpoint.method.name!r} for endpoint "
+                    f"{endpoint}"
+                )
                 logger.error(err_msg)
                 raise ValueError(err_msg)
 
@@ -249,7 +236,7 @@ class Client:
         )
         logger.debug(f"Subscribed to {name!r} (via {endpoint.method.name!r})")
 
-    def unsubscribe(self, endpoint: Endpoint | str):
+    def unsubscribe(self, endpoint: KiwoomEndpoint | str) -> None:
         name = endpoint if isinstance(endpoint, str) else endpoint.name
         logger.debug(f"Unsubscribing from {name!r}")
 
@@ -259,21 +246,23 @@ class Client:
                 self.rest_client.unsubscribe(name)
             elif unsubbed.req.method == Method.WEBSOCKET:
                 raise NotImplementedError()
-                self.ws_client.unsubscribe(name)
 
             self.datastores.pop(name)
             logger.debug(f"Unsubscribed from {name!r}")
         else:
             logger.debug(f"No subscription found for {name!r}")
 
-    async def start(self):
-        logger.info("Starting Client")
+    async def start(self) -> None:
+        logger.info("Starting KiwoomClient")
         async for polled in self.rest_client.poll():
             for name, response in polled.items():
-                self.datastores[name].update(response)
+                if response is None:
+                    continue
+
+                self.datastores[name].update(response.output)
                 self.datastores[name].save_to_disk(self.data_path)
 
-            logger.debug("Received new data from REST client poll")
+            logger.debug("Received new data from Kiwoom REST client poll")
 
     def save(self) -> None:
         self.data_path.parent.mkdir(parents=True, exist_ok=True)
@@ -281,5 +270,5 @@ class Client:
             store.save_to_disk(self.data_path)
         logger.info(f"Saved all datastores to `{self.data_path}`")
 
-    def execute_all_rest(self) -> dict[str, RestResponse]:
+    def execute_all_rest(self) -> dict[str, KiwoomRestResponse | None]:
         return self.rest_client.execute_all()

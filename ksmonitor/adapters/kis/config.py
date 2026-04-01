@@ -6,15 +6,13 @@ from pathlib import Path
 
 import yaml
 
-from .._base.config import Config
-
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CONFIG_PATH = Path("~").expanduser() / ".ksmonitor" / "config" / "kis.yaml"
 
 
 @dataclass(kw_only=True)
-class KISConfig(Config):
+class KISConfig:
     # paper (모의) mode
     is_paper: bool
     my_htsid: str
