@@ -21,55 +21,55 @@ class VolumeRankResponseOutput(KISBaseRestResponseOutput):
     mksc_shrn_iscd: list[str] = field(
         default_factory=list, init=False, metadata={"ko": "유가증권 단축 종목코드"}
     )
-    data_rank: list[str] = field(
+    data_rank: list[int] = field(
         default_factory=list, init=False, metadata={"ko": "데이터 순위"}
     )
-    stck_prpr: list[str] = field(
+    stck_prpr: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "주식 현재가"}
     )
-    prdy_vrss_sign: list[str] = field(
+    prdy_vrss_sign: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "전일 대비 부호"}
     )
-    prdy_vrss: list[str] = field(
+    prdy_vrss: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "전일 대비"}
     )
-    prdy_ctrt: list[str] = field(
+    prdy_ctrt: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "전일 대비율"}
     )
-    acml_vol: list[str] = field(
+    acml_vol: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "누적 거래량"}
     )
-    prdy_vol: list[str] = field(
+    prdy_vol: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "전일 거래량"}
     )
-    lstn_stcn: list[str] = field(
+    lstn_stcn: list[int] = field(
         default_factory=list, init=False, metadata={"ko": "상장 주수"}
     )
-    avrg_vol: list[str] = field(
+    avrg_vol: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "평균 거래량"}
     )
-    n_befr_clpr_vrss_prpr_rate: list[str] = field(
+    n_befr_clpr_vrss_prpr_rate: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "N일전종가대비현재가대비율"}
     )
-    vol_inrt: list[str] = field(
+    vol_inrt: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "거래량증가율"}
     )
-    vol_tnrt: list[str] = field(
+    vol_tnrt: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "거래량 회전율"}
     )
-    nday_vol_tnrt: list[str] = field(
+    nday_vol_tnrt: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "N일 거래량 회전율"}
     )
-    avrg_tr_pbmn: list[str] = field(
+    avrg_tr_pbmn: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "평균 거래 대금"}
     )
-    tr_pbmn_tnrt: list[str] = field(
+    tr_pbmn_tnrt: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "거래대금회전율"}
     )
-    nday_tr_pbmn_tnrt: list[str] = field(
+    nday_tr_pbmn_tnrt: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "N일 거래대금 회전율"}
     )
-    acml_tr_pbmn: list[str] = field(
+    acml_tr_pbmn: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "누적 거래 대금"}
     )
 
@@ -77,25 +77,27 @@ class VolumeRankResponseOutput(KISBaseRestResponseOutput):
         unexpected, missing = self._check_keys()
 
         for item in self.output_raw:
-            self.hts_kor_isnm.append(item["hts_kor_isnm"])
-            self.mksc_shrn_iscd.append(item["mksc_shrn_iscd"])
-            self.data_rank.append(item["data_rank"])
-            self.stck_prpr.append(item["stck_prpr"])
-            self.prdy_vrss_sign.append(item["prdy_vrss_sign"])
-            self.prdy_vrss.append(item["prdy_vrss"])
-            self.prdy_ctrt.append(item["prdy_ctrt"])
-            self.acml_vol.append(item["acml_vol"])
-            self.prdy_vol.append(item["prdy_vol"])
-            self.lstn_stcn.append(item["lstn_stcn"])
-            self.avrg_vol.append(item["avrg_vol"])
-            self.n_befr_clpr_vrss_prpr_rate.append(item["n_befr_clpr_vrss_prpr_rate"])
-            self.vol_inrt.append(item["vol_inrt"])
-            self.vol_tnrt.append(item["vol_tnrt"])
-            self.nday_vol_tnrt.append(item["nday_vol_tnrt"])
-            self.avrg_tr_pbmn.append(item["avrg_tr_pbmn"])
-            self.tr_pbmn_tnrt.append(item["tr_pbmn_tnrt"])
-            self.nday_tr_pbmn_tnrt.append(item["nday_tr_pbmn_tnrt"])
-            self.acml_tr_pbmn.append(item["acml_tr_pbmn"])
+            self.hts_kor_isnm.append(str(item["hts_kor_isnm"]))
+            self.mksc_shrn_iscd.append(str(item["mksc_shrn_iscd"]))
+            self.data_rank.append(int(item["data_rank"]))
+            self.stck_prpr.append(float(item["stck_prpr"]))
+            self.prdy_vrss_sign.append(float(item["prdy_vrss_sign"]))
+            self.prdy_vrss.append(float(item["prdy_vrss"]))
+            self.prdy_ctrt.append(float(item["prdy_ctrt"]))
+            self.acml_vol.append(float(item["acml_vol"]))
+            self.prdy_vol.append(float(item["prdy_vol"]))
+            self.lstn_stcn.append(int(item["lstn_stcn"]))
+            self.avrg_vol.append(float(item["avrg_vol"]))
+            self.n_befr_clpr_vrss_prpr_rate.append(
+                float(item["n_befr_clpr_vrss_prpr_rate"])
+            )
+            self.vol_inrt.append(float(item["vol_inrt"]))
+            self.vol_tnrt.append(float(item["vol_tnrt"]))
+            self.nday_vol_tnrt.append(float(item["nday_vol_tnrt"]))
+            self.avrg_tr_pbmn.append(float(item["avrg_tr_pbmn"]))
+            self.tr_pbmn_tnrt.append(float(item["tr_pbmn_tnrt"]))
+            self.nday_tr_pbmn_tnrt.append(float(item["nday_tr_pbmn_tnrt"]))
+            self.acml_tr_pbmn.append(float(item["acml_tr_pbmn"]))
 
 
 @dataclass(init=False)

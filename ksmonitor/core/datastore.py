@@ -12,13 +12,24 @@ from .protocols import RestResponseOutput
 logger = logging.getLogger(__name__)
 
 
+TYPE_MAPPER = {
+    int: "INTEGER",
+    float: "REAL",
+    str: "TEXT",
+    bool: "INTEGER",  # SQLite does not have a separate Boolean storage class
+}
+
+
 class DataStore:
     def __init__(self, name: str) -> None:
         self.name = name
         self._ko_fields: list = []
-        self._columns: list[str] = []
-        self._rows: list[tuple] = []
+        self.columns: list[str] = []
+        self.rows: list[tuple] = []
         self._rows_saved: int = 0
+
+        self._col_defs = ""
+        self._placeholders = ""
 
     @classmethod
     def from_endpoint(
@@ -29,8 +40,18 @@ class DataStore:
             f for f in fields(endpoint_schema) if f.metadata.get("ko")
         ]
 
-        new_store._columns = ["polled_at", *(f.name for f in new_store._ko_fields)]
-        new_store._rows = []
+        new_store.columns = ["polled_at", *(f.name for f in new_store._ko_fields)]
+        new_store._placeholders = ", ".join("?" * len(new_store.columns))
+        new_store._col_defs = "polled_at TEXT,"  # for "polled_at" column
+        new_store._col_defs += ", ".join(
+            [
+                # list[str].__args__[0] returns str == the inner type
+                f"{f.name} {TYPE_MAPPER[f.type.__args__[0]]}"
+                for f in new_store._ko_fields
+            ]
+        )  # add data types of other columns
+
+        new_store.rows = []
         return new_store
 
     def update(self, new_output: RestResponseOutput) -> None:
@@ -38,25 +59,22 @@ class DataStore:
         polled_at = output.polled_at.isoformat()
 
         if isinstance(output.output_raw, dict):
-            self._rows.append(
+            self.rows.append(
                 (polled_at, *(getattr(output, f.name) for f in self._ko_fields))
             )
         else:
             for values in zip(*(getattr(output, f.name) for f in self._ko_fields)):
-                self._rows.append((polled_at, *values))
+                self.rows.append((polled_at, *values))
 
     def to_polars(self):
-        return pl.DataFrame(self._rows, schema=self._columns, orient="row")
+        return pl.DataFrame(self.rows, schema=self.columns, orient="row")
 
     def save_to_disk(self, path: Path) -> None:
-        col_defs = ", ".join(f'"{c}" TEXT' for c in self._columns)
-        placeholders = ", ".join("?" * len(self._columns))
-        rows_to_save = self._rows[self._rows_saved :]
-
+        rows_to_save = self.rows[self._rows_saved :]
         with sqlite3.connect(path) as conn:
-            conn.execute(f'CREATE TABLE IF NOT EXISTS "{self.name}" ({col_defs})')
+            conn.execute(f'CREATE TABLE IF NOT EXISTS "{self.name}" ({self._col_defs})')
             conn.executemany(
-                f'INSERT INTO "{self.name}" VALUES ({placeholders})', rows_to_save
+                f'INSERT INTO "{self.name}" VALUES ({self._placeholders})', rows_to_save
             )
             self._rows_saved += len(rows_to_save)
 
@@ -68,8 +86,8 @@ class DataStore:
 
         with sqlite3.connect(path) as conn:
             cursor = conn.execute(f'SELECT * FROM "{name}"')
-            store._columns = [desc[0] for desc in cursor.description]
-            store._rows = list(cursor.fetchall())
-            store._rows_saved = len(store._rows)
+            store.columns = [desc[0] for desc in cursor.description]
+            store.rows = list(cursor.fetchall())
+            store._rows_saved = len(store.rows)
 
         return store

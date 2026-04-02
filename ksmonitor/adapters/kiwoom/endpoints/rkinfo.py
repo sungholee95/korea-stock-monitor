@@ -18,58 +18,58 @@ class TradePriceRankResponseOutput(KiwoomBaseRestResponseOutput):
     stk_cd: list[str] = field(
         default_factory=list, init=False, metadata={"ko": "종목코드"}
     )
-    now_rank: list[str] = field(
+    now_rank: list[int] = field(
         default_factory=list, init=False, metadata={"ko": "현재순위"}
     )
-    pred_rank: list[str] = field(
+    pred_rank: list[int] = field(
         default_factory=list, init=False, metadata={"ko": "전일순위"}
     )
     stk_nm: list[str] = field(
         default_factory=list, init=False, metadata={"ko": "종목명"}
     )
-    cur_prc: list[str] = field(
+    cur_prc: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "현재가"}
     )
-    pred_pre_sig: list[str] = field(
+    pred_pre_sig: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "전일대비기호"}
     )
-    pred_pre: list[str] = field(
+    pred_pre: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "전일대비"}
     )
-    flu_rt: list[str] = field(
+    flu_rt: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "등락률"}
     )
-    sel_bid: list[str] = field(
+    sel_bid: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "매도호가"}
     )
-    buy_bid: list[str] = field(
+    buy_bid: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "매수호가"}
     )
-    now_trde_qty: list[str] = field(
+    now_trde_qty: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "현재거래량"}
     )
-    pred_trde_qty: list[str] = field(
+    pred_trde_qty: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "전일거래량"}
     )
-    trde_prica: list[str] = field(
+    trde_prica: list[float] = field(
         default_factory=list, init=False, metadata={"ko": "거래대금"}
     )
 
     def __post_init__(self):
         for item in self.output_raw:
             self.stk_cd.append(item.get("stk_cd", ""))
-            self.now_rank.append(item.get("now_rank", ""))
-            self.pred_rank.append(item.get("pred_rank", ""))
+            self.now_rank.append(int(item.get("now_rank", 0)))
+            self.pred_rank.append(int(item.get("pred_rank", 0)))
             self.stk_nm.append(item.get("stk_nm", ""))
-            self.cur_prc.append(item.get("cur_prc", ""))
-            self.pred_pre_sig.append(item.get("pred_pre_sig", ""))
-            self.pred_pre.append(item.get("pred_pre", ""))
-            self.flu_rt.append(item.get("flu_rt", ""))
-            self.sel_bid.append(item.get("sel_bid", ""))
-            self.buy_bid.append(item.get("buy_bid", ""))
-            self.now_trde_qty.append(item.get("now_trde_qty", ""))
-            self.pred_trde_qty.append(item.get("pred_trde_qty", ""))
-            self.trde_prica.append(item.get("trde_prica", ""))
+            self.cur_prc.append(float(item.get("cur_prc", 0)))
+            self.pred_pre_sig.append(float(item.get("pred_pre_sig", 0)))
+            self.pred_pre.append(float(item.get("pred_pre", 0)))
+            self.flu_rt.append(float(item.get("flu_rt", 0)))
+            self.sel_bid.append(float(item.get("sel_bid", 0)))
+            self.buy_bid.append(float(item.get("buy_bid", 0)))
+            self.now_trde_qty.append(float(item.get("now_trde_qty", 0)))
+            self.pred_trde_qty.append(float(item.get("pred_trde_qty", 0)))
+            self.trde_prica.append(float(item.get("trde_prica", 0)))
 
 
 @dataclass(init=False)
