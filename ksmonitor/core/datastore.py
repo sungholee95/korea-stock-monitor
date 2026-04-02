@@ -45,8 +45,9 @@ class DataStore:
         new_store._col_defs = "polled_at TEXT,"  # for "polled_at" column
         new_store._col_defs += ", ".join(
             [
-                # list[str].__args__[0] returns str == the inner type
-                f"{f.name} {TYPE_MAPPER[f.type.__args__[0]]}"
+                # list[str].__args__[0] returns str (the "inner" type)
+                # Plain types (int, str, ...) have no __args__ attribute
+                f"{f.name} {TYPE_MAPPER[f.type.__args__[0] if hasattr(f.type, '__args__') else f.type]}"
                 for f in new_store._ko_fields
             ]
         )  # add data types of other columns
