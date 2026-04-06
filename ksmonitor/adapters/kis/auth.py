@@ -184,7 +184,6 @@ class KISAuth:
     def get_access_token(self) -> AccessToken:
         # Return cached token if valid
         if self._access_token and self._access_token.is_valid():
-            logger.info("Using cached token issued")
             return self._access_token
 
         # Return saved token from credentials manger, if still valid

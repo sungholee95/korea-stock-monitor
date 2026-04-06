@@ -44,6 +44,7 @@ class KiwoomAuth:
             RuntimeError: If either app key or app secret is None (not found in credentials manager)
 
         """
+
         if not self.is_paper:
             app_key_name = self.config.my_app_key_name
             app_sec_name = self.config.my_app_sec_name
@@ -122,7 +123,6 @@ class KiwoomAuth:
     def get_access_token(self) -> AccessToken:
         # Return cached token if valid
         if self._access_token and self._access_token.is_valid():
-            logger.info("Using cached token issued")
             return self._access_token
 
         # Return saved token from credentials manger, if still valid
@@ -130,10 +130,16 @@ class KiwoomAuth:
         if saved_token is not None:
             exp_time_str = keyring.get_password("kiwoom", "access_token_expires_at")
             if exp_time_str is None:
-                raise RuntimeError(
+                # if this raises, something went wrong during caching,
+                #  and only the token was saved.
+                # Invalidate the token manually and reacquire
+                err = (
                     "`access_token_expires_at` should exist in credentials if "
                     "`access_token` is saved but is None"
                 )
+                logger.critical(err)
+                raise RuntimeError(err)
+
             expires_at = datetime.fromisoformat(exp_time_str)
             if datetime.now() < expires_at:
                 logger.info(
@@ -175,6 +181,7 @@ class KiwoomAuth:
             Dictionary of headers with approval key
 
         """
+
         headers = self._websocket_headers.copy()
         headers["approval_key"] = self.get_access_token().access_token
         return headers

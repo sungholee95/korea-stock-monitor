@@ -36,7 +36,7 @@ class KISSubscription:
 
         self.auth = auth
         self.query_params = query_params or {}
-        self.req = request_spec(auth=auth, **self.query_params)  # pyright: ignore[reportArgumentType]
+        self.req = request_spec(auth=auth, **self.query_params)
         self.response_spec = request_spec._response_spec
 
     def execute(self) -> KISRestResponse:
