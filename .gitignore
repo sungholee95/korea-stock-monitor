@@ -10,7 +10,6 @@ wheels/
 .venv
 
 # Dev environment
-example/
 scratches/
 .vscode/
 .github/
