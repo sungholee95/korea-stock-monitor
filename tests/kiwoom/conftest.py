@@ -1,5 +1,8 @@
+from unittest.mock import MagicMock
+
 import pytest
 
+from ksmonitor.adapters.kiwoom.auth import KiwoomAuth
 from ksmonitor.adapters.kiwoom.config import KiwoomConfig
 
 
@@ -18,3 +21,13 @@ def kiwoom_prod_config() -> KiwoomConfig:
 def no_requests(monkeypatch):
     """Remove requests.sessions.Session.request for all tests."""
     monkeypatch.delattr("requests.sessions.Session.request")
+
+
+@pytest.fixture
+def mock_auth(kiwoom_prod_config: KiwoomConfig):
+    auth = MagicMock(spec=KiwoomAuth)
+    auth.get_rest_headers.return_value = {
+        "authorization": "Bearer fake_token",
+        "Content-Type": "application/json;charset=UTF-8",
+    }
+    return auth
