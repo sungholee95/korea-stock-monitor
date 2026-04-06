@@ -68,12 +68,10 @@ class KiwoomSubscription:
 
 
 class _KiwoomRestClient:
-    def __init__(self, auth: KiwoomAuth, refresh_rate: float):
-        logger.info(
-            f"Initializing _KiwoomRestClient with refresh rate: {refresh_rate} s"
-        )
+    def __init__(self, auth: KiwoomAuth, poll_rate: float):
+        logger.info(f"Initializing _KiwoomRestClient with refresh rate: {poll_rate} s")
         self.auth = auth
-        self.refresh_rate = refresh_rate
+        self.poll_rate = poll_rate
         self._subscribed: dict[str, KiwoomSubscription] = {}
 
     def _enforce_rate_limit(self) -> None:
@@ -81,7 +79,7 @@ class _KiwoomRestClient:
         if n_subs == 0:
             return
 
-        rate = self.refresh_rate
+        rate = self.poll_rate
         if rate == 0:
             err = "Refresh rate must be greater than 0"
             logger.error(err)
@@ -111,7 +109,7 @@ class _KiwoomRestClient:
         while True:
             try:
                 response = self.execute_all()
-                await asyncio.sleep(self.refresh_rate)
+                await asyncio.sleep(self.poll_rate)
                 yield response
             except asyncio.CancelledError:
                 logger.info("Client stopped by user (KeyboardInterrupt)")
@@ -190,15 +188,15 @@ class KiwoomClient:
     def __init__(
         self,
         auth: KiwoomAuth,
-        rest_refresh_rate: int | float = 60,
+        rest_poll_rate: int | float = 60,
         data_path: Path = _DEFAULT_DATA_PATH,
     ):
         logger.info(
-            f"Initializing KiwoomClient with REST refresh rate: {rest_refresh_rate}s"
+            f"Initializing KiwoomClient with REST polling rate: {rest_poll_rate}s"
         )
         self.auth = auth
         self.data_path = data_path
-        self.rest_client = _KiwoomRestClient(auth, rest_refresh_rate)
+        self.rest_client = _KiwoomRestClient(auth, rest_poll_rate)
         self.ws_client = _KiwoomWebSocketClient(auth, rate_limit_delay=1)
 
         self._subscribed: dict[str, KiwoomSubscription] = {}
