@@ -131,11 +131,11 @@ class VolumeRankRequest(KISBaseRestRequest):
     fid_input_price_2: str = ""  # 최고 가격 ("" 이면 전체)
     fid_vol_cnt: str = ""  # 거래량 수 ("" 이면 전체)
 
-    def headers(self) -> dict[str, str]:
-        headers = super()._base_headers()
+    def get_headers(self) -> dict[str, str]:
+        headers = super()._get_base_headers()
         return headers
 
-    def query_params(self) -> dict[str, str]:
+    def get_query_params(self) -> dict[str, str]:
         query = {
             "FID_COND_MRKT_DIV_CODE": self.fid_cond_mrkt_div_code,
             "FID_COND_SCR_DIV_CODE": self.fid_cond_scr_div_code,

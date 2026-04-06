@@ -155,7 +155,7 @@ class KiwoomBaseRestRequest(ABC):
         """Transaction ID from the endpoint definition."""
         return self._endpoint.api_id
 
-    def _base_headers(self) -> dict[str, str]:
+    def _get_base_headers(self) -> dict[str, str]:
         """Build base headers common to all REST requests."""
         headers = self.auth.get_rest_headers()
         headers["api-id"] = self.api_id
@@ -167,7 +167,7 @@ class KiwoomBaseRestRequest(ABC):
         return headers
 
     @abstractmethod
-    def headers(self) -> dict[str, str]:
+    def get_headers(self) -> dict[str, str]:
         err = (
             "Subclasses should call `super()._base_headers()` "
             "and add any additional headers if needed"
@@ -175,7 +175,7 @@ class KiwoomBaseRestRequest(ABC):
         raise NotImplementedError(err)
 
     @abstractmethod
-    def query_params(self) -> dict[str, str]:
+    def get_query_params(self) -> dict[str, str]:
         raise NotImplementedError()
 
     def build_request(
@@ -192,7 +192,7 @@ class KiwoomBaseRestRequest(ABC):
         return {
             "method": self.method.name,
             "url": f"{self.auth.get_rest_base_url()}{self.api_path}",
-            "headers": self.headers(),
-            "data": json.dumps(self.query_params()),
+            "headers": self.get_headers(),
+            "data": json.dumps(self.get_query_params()),
             "timeout": 10,
         }

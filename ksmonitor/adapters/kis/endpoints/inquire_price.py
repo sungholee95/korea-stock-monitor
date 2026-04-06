@@ -237,11 +237,11 @@ class InquirePriceRequest(KISBaseRestRequest):
     # default query params (can be overridden)
     fid_cond_mrkt_div_code: str = "J"  # 조건 시장 분류 코드; J:KRX, NX:NXT, UN:통합
 
-    def headers(self) -> dict[str, str]:
+    def get_headers(self) -> dict[str, str]:
         """Headers filled by Auth class. Call Auth.get_rest_headers() to populate."""
-        return super()._base_headers()
+        return super()._get_base_headers()
 
-    def query_params(self) -> dict[str, str]:
+    def get_query_params(self) -> dict[str, str]:
         return {
             "FID_COND_MRKT_DIV_CODE": self.fid_cond_mrkt_div_code,
             "FID_INPUT_ISCD": self.fid_input_iscd,

@@ -96,11 +96,11 @@ class TradePriceRankRequest(KiwoomBaseRestRequest):
     mang_stk_incls: str = "1"  # 관리종목포함; 0:관리종목 미포함, 1:관리종목 포함
     stex_tp: str = "3"  # 거래소구분; 1:KRX, 2:NXT 3.통합
 
-    def headers(self) -> dict[str, str]:
-        headers = super()._base_headers()
+    def get_headers(self) -> dict[str, str]:
+        headers = super()._get_base_headers()
         return headers
 
-    def query_params(self) -> dict[str, str]:
+    def get_query_params(self) -> dict[str, str]:
         query = {
             "mrkt_tp": self.mrkt_tp,
             "mang_stk_incls": self.mang_stk_incls,
