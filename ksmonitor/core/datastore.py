@@ -42,15 +42,15 @@ class DataStore:
 
         new_store.columns = ["polled_at", *(f.name for f in new_store._ko_fields)]
         new_store._placeholders = ", ".join("?" * len(new_store.columns))
-        new_store._col_defs = "polled_at TEXT,"  # for "polled_at" column
+        new_store._col_defs = "polled_at TEXT,"  # datatype for "polled_at"
         new_store._col_defs += ", ".join(
+            # list[str].__args__[0] returns str (the "inner" type)
+            # Plain types (int, str, ...) have no __args__ attribute
             [
-                # list[str].__args__[0] returns str (the "inner" type)
-                # Plain types (int, str, ...) have no __args__ attribute
                 f"{f.name} {TYPE_MAPPER[f.type.__args__[0] if hasattr(f.type, '__args__') else f.type]}"
                 for f in new_store._ko_fields
             ]
-        )  # add data types of other columns
+        )  # datatypes for other columns
 
         new_store.rows = []
         return new_store
