@@ -88,6 +88,8 @@ class KiwoomAuth:
             )
             response.raise_for_status()
             data = response.json()
+            if data["return_code"] != 0:
+                raise requests.RequestException(data["return_msg"])
         except requests.RequestException as e:
             err_msg = f"Failed to acquire OAuth access token: {e}"
             logger.error(err_msg)
