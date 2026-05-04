@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, AsyncGenerator
 
@@ -14,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from websockets.asyncio.client import ClientConnection
+
+    from ksmonitor.core.alerts import BaseAlert
 
     from .auth import KiwoomAuth
     from .endpoints import KiwoomEndpoint, KiwoomRestRequest, KiwoomRestResponse
@@ -201,6 +204,7 @@ class KiwoomClient:
 
         self._subscribed: dict[str, KiwoomSubscription] = {}
         self.datastores: dict[str, DataStore] = {}
+        self.alerts: list[BaseAlert] = []
 
     def subscribe(
         self,
@@ -252,6 +256,9 @@ class KiwoomClient:
 
     async def start(self) -> None:
         logger.info("Starting KiwoomClient")
+        await asyncio.gather(self._poll_loop(), self._alert_loop())
+
+    async def _poll_loop(self) -> None:
         async for polled in self.rest_client.poll():
             for name, response in polled.items():
                 if response is None:
@@ -260,7 +267,34 @@ class KiwoomClient:
                 self.datastores[name].update(response.output)
                 self.datastores[name].save_to_disk(self.data_path)
 
-            logger.debug("Received new data from Kiwoom REST client poll")
+                for alert in self.alerts:
+                    if alert.subscription_name == name:
+                        alert.ingest(response.output)
+
+    async def _alert_loop(self) -> None:
+        if not self.alerts:
+            return
+
+        while True:
+            try:
+                now = datetime.now()
+                next_times = [alert.next_eval_time(now) for alert in self.alerts]
+                next_due = min(next_times)
+                sleep_secs = max(0.1, (next_due - now).total_seconds())
+                await asyncio.sleep(sleep_secs)
+            except asyncio.CancelledError:
+                logger.info("Alert loop cancelled")
+                break
+
+            now = datetime.now()
+            for alert in self.alerts:
+                if not alert.is_due(now):
+                    continue
+                message = alert.check()
+                if message:
+                    logger.info(f"Alert triggered: {alert.name!r}")
+                    print(message)
+                    # TODO: dispatch to Telegram adapter
 
     def save(self) -> None:
         self.data_path.parent.mkdir(parents=True, exist_ok=True)
@@ -270,3 +304,17 @@ class KiwoomClient:
 
     def execute_all_rest(self) -> dict[str, KiwoomRestResponse | None]:
         return self.rest_client.execute_all()
+
+    def register_alerts(self, *alerts: BaseAlert) -> None:
+        for alert in alerts:
+            if alert.subscription_name not in self._subscribed:
+                logger.warning(
+                    f"Alert {alert.name!r} references subscription "
+                    f"{alert.subscription_name!r} which is not subscribed; "
+                    f"alert will not function properly"
+                )
+            self.alerts.append(alert)
+            logger.debug(
+                f"Registered alert {alert.name!r} for subscription "
+                f"{alert.subscription_name!r}"
+            )
