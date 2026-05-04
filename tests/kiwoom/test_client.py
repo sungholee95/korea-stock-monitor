@@ -1,13 +1,23 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ksmonitor.adapters.kiwoom.client import (
+    KiwoomClient,
     KiwoomSubscription,
     _KiwoomRestClient,
 )
 from ksmonitor.adapters.kiwoom.endpoints import KiwoomEndpoint
 from ksmonitor.adapters.kiwoom.endpoints.rkinfo import TradePriceRankRequest
+
+
+def _make_alert(endpoint=KiwoomEndpoint.거래대금상위요청, params=None, name="test"):
+    """Build a mock alert exposing the attributes KiwoomClient reads."""
+    alert = MagicMock()
+    alert.endpoint = endpoint
+    alert.endpoint_params = dict(params or {})
+    alert.name = name
+    return alert
 
 
 class TestSubscription:
@@ -118,3 +128,67 @@ class TestKiwoomRestClientRateLimit:
         """No subscriptions — rate limit check is a no-op even with zero poll rate."""
         client = _KiwoomRestClient(mock_auth, poll_rate=0)
         client._enforce_rate_limit()  # should not raise
+
+
+class TestKiwoomClientAlertRegistration:
+    def test_subscription_key_generation(self):
+        endpoint = KiwoomEndpoint.거래대금상위요청
+        assert KiwoomClient._subscription_key(endpoint, {}) == endpoint.name
+        assert (
+            KiwoomClient._subscription_key(endpoint, {"mrkt_tp": "000"})
+            == f"{endpoint.name}_mrkt_tp=000"
+        )
+        # query_param keys are sorted
+        assert (
+            KiwoomClient._subscription_key(endpoint, {"b": "2", "a": "1"})
+            == f"{endpoint.name}_a=1,b=2"
+        )
+
+    def test_different_params_create_separate_subscriptions(self, mock_auth):
+        client = KiwoomClient(mock_auth, rest_poll_rate=10)
+        a1 = _make_alert(params={"mrkt_tp": "000"}, name="alert1")
+        a2 = _make_alert(params={"mrkt_tp": "001"}, name="alert2")
+
+        client.register_alerts(a1, a2)
+
+        assert len(client._subscribed) == 2
+        k1 = client._subscription_key(a1.endpoint, a1.endpoint_params)
+        k2 = client._subscription_key(a2.endpoint, a2.endpoint_params)
+        assert k1 != k2
+        assert client._alerts_by_sub[k1] == {a1}
+        assert client._alerts_by_sub[k2] == {a2}
+
+    def test_unregister_alert_refcounts_subscription(self, mock_auth):
+        client = KiwoomClient(mock_auth, rest_poll_rate=10)
+        a1 = _make_alert(params={"mrkt_tp": "000"}, name="a1")
+        a2 = _make_alert(params={"mrkt_tp": "000"}, name="a2")
+
+        client.register_alerts(a1, a2)
+        key = client._subscription_key(a1.endpoint, a1.endpoint_params)
+        assert client._alerts_by_sub[key] == {a1, a2}
+        assert key in client._subscribed
+
+        client.unregister_alert(a1)
+        # one alert still watching subscription
+        assert client._alerts_by_sub[key] == {a2}
+        assert key in client._subscribed
+
+        client.unregister_alert(a2)
+        # no more watchers to subscription
+        assert key not in client._alerts_by_sub
+        assert key not in client._subscribed
+
+    def test_poll_dispatches_to_all_alerts_on_shared_subscription(self, mock_auth):
+        client = KiwoomClient(mock_auth, rest_poll_rate=10)
+        a1 = _make_alert(params={"mrkt_tp": "000"}, name="a1")
+        a2 = _make_alert(params={"mrkt_tp": "000"}, name="a2")
+        client.register_alerts(a1, a2)
+
+        key = client._subscription_key(a1.endpoint, a1.endpoint_params)
+        fake_output = MagicMock()
+        # Mirrors the dispatch line in `_poll_loop`
+        for alert in client._alerts_by_sub.get(key, ()):
+            alert.ingest(fake_output)
+
+        a1.ingest.assert_called_once_with(fake_output)
+        a2.ingest.assert_called_once_with(fake_output)

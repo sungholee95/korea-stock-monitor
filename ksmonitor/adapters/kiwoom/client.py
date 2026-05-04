@@ -204,9 +204,17 @@ class KiwoomClient:
 
         self._subscribed: dict[str, KiwoomSubscription] = {}
         self.datastores: dict[str, DataStore] = {}
-        self.alerts: list[BaseAlert] = []
+        self.alerts: set[BaseAlert] = set()
+        self._alerts_by_sub: dict[str, set[BaseAlert]] = {}
 
-    def subscribe(
+    @staticmethod
+    def _subscription_key(endpoint: KiwoomEndpoint, params: dict[str, str]) -> str:
+        if not params:
+            return endpoint.name
+        joined = ",".join(f"{k}={v}" for k, v in sorted(params.items()))
+        return f"{endpoint.name}_{joined}"
+
+    def _subscribe(
         self,
         endpoint: KiwoomEndpoint,
         name: str | None = None,
@@ -214,6 +222,9 @@ class KiwoomClient:
         query_params: dict[str, str] | None = None,
     ) -> None:
         name = name or endpoint.name
+        if name in self._subscribed:
+            logger.debug(f"Already subscribed to {name!r}; skipping")
+            return
 
         match endpoint.method:
             case Method.GET | Method.POST:
@@ -238,8 +249,7 @@ class KiwoomClient:
         )
         logger.debug(f"Subscribed to {name!r} (via {endpoint.method.name!r})")
 
-    def unsubscribe(self, endpoint: KiwoomEndpoint | str) -> None:
-        name = endpoint if isinstance(endpoint, str) else endpoint.name
+    def _unsubscribe(self, name: str) -> None:
         logger.debug(f"Unsubscribing from {name!r}")
 
         unsubbed = self._subscribed.pop(name, None)
@@ -267,9 +277,8 @@ class KiwoomClient:
                 self.datastores[name].update(response.output)
                 self.datastores[name].save_to_disk(self.data_path)
 
-                for alert in self.alerts:
-                    if alert.subscription_name == name:
-                        alert.ingest(response.output)
+                for alert in self._alerts_by_sub.get(name, ()):
+                    alert.ingest(response.output)
 
     async def _alert_loop(self) -> None:
         if not self.alerts:
@@ -307,14 +316,24 @@ class KiwoomClient:
 
     def register_alerts(self, *alerts: BaseAlert) -> None:
         for alert in alerts:
-            if alert.subscription_name not in self._subscribed:
-                logger.warning(
-                    f"Alert {alert.name!r} references subscription "
-                    f"{alert.subscription_name!r} which is not subscribed; "
-                    f"alert will not function properly"
+            key = self._subscription_key(alert.endpoint, alert.endpoint_params)
+            if key not in self._subscribed:
+                self._subscribe(
+                    alert.endpoint,
+                    name=key,
+                    query_params=alert.endpoint_params,
                 )
-            self.alerts.append(alert)
-            logger.debug(
-                f"Registered alert {alert.name!r} for subscription "
-                f"{alert.subscription_name!r}"
-            )
+            self._alerts_by_sub.setdefault(key, set()).add(alert)
+            self.alerts.add(alert)
+            logger.debug(f"Registered alert {alert.name!r} on {key!r}")
+
+    def unregister_alert(self, alert: BaseAlert) -> None:
+        key = self._subscription_key(alert.endpoint, alert.endpoint_params)
+        watchers = self._alerts_by_sub.get(key)
+        if watchers is not None:
+            watchers.discard(alert)
+            if not watchers:
+                self._alerts_by_sub.pop(key, None)
+                self._unsubscribe(key)
+        self.alerts.discard(alert)
+        logger.debug(f"Unregistered alert {alert.name!r}")

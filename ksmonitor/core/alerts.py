@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+from ksmonitor.adapters.kiwoom import KiwoomEndpoint
 from ksmonitor.core import market_time
 
 if TYPE_CHECKING:
@@ -30,12 +31,14 @@ class BaseAlert(ABC):
     def __init__(
         self,
         name: str,
-        subscription_name: str,
+        endpoint: KiwoomEndpoint,
         *,
+        endpoint_params: dict[str, str] | None = None,
         cooldown_minutes: float = 0.0,
     ) -> None:
         self.name = name
-        self.subscription_name = subscription_name
+        self.endpoint = endpoint
+        self.endpoint_params = dict(endpoint_params or {})
         self._cooldown = timedelta(minutes=cooldown_minutes)
         self._last_fired: datetime | None = None
 
@@ -119,14 +122,13 @@ class TradeValue(BaseAlert):
     ) -> None:
         self.threshold_krw = threshold_krw
         self.window_minutes = window_minutes
-
         name = (
             f"거래대금 {self._number_to_natural(threshold_krw)}원 돌파 "
             f"({window_minutes}분 기준)"
         )
         super().__init__(
             name=name,
-            subscription_name="거래대금상위요청",
+            endpoint=KiwoomEndpoint.거래대금상위요청,
             cooldown_minutes=cooldown_minutes,
         )
 
@@ -246,8 +248,12 @@ class TradeValue(BaseAlert):
             baseline = self._bucket_start[ticker]
             delta = latest.value - baseline.value
             lines.append(f"~~~ {latest.name} ({ticker}) ~~~")
-            lines.append(f"거래대금 증가분: {self._number_to_natural(delta)}원")
-            lines.append(f"현재 거래대금: {self._number_to_natural(latest.value)}원")
+            lines.append(
+                f"{self.window_minutes}분 거래대금: {self._number_to_natural(delta)}원"
+            )
+            lines.append(f"상승률: {delta / baseline.value * 100:.2f}%")
+            lines.append(f"누적 거래대금: {self._number_to_natural(latest.value)}원")
+
             logger.debug(f"거래대금 증가분: {delta}")
             logger.debug(f"누적 거래대금: {latest.value}")
         return "\n".join(lines) + "\n"
