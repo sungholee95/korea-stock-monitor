@@ -25,7 +25,7 @@ adapters/telegram/ — Telegram notifications (stub)
 core/              — Broker-agnostic: DataStore, alerts, protocols
 ```
 
-**Data flow:** `Endpoint` enum → `REQUEST_REGISTRY` → Request (builds headers/params with auth) → `Subscription` (executes) → Response (typed output) → `DataStore` (SQLite + Polars)
+**Data flow:** `Endpoint` enum -> `REQUEST_REGISTRY` -> Request (builds headers/params with auth) -> `Subscription` (executes) -> Response (typed output) -> `DataStore` (SQLite + Polars)
 
 `adapters/_base/` provides shared `Config`, `Auth`, and `Endpoint` ABCs — `core/` depends only on these, never on KIS/Kiwoom types directly. `RestRequest`/`RestResponse` in `core/client.py` are union type aliases.
 
@@ -44,7 +44,7 @@ Keyed by subscription name. `from_endpoint(name, schema)` infers columns from `m
 
 ### Alert system
 
-`BaseAlert` subclasses implement `evaluate(datastores) → bool` and `format_message(datastores) → str`. Base `check()` enforces cooldown before calling `evaluate`. Reference subscription via `subscription_name`.
+`BaseAlert` subclasses implement `evaluate(datastores) -> bool` and `format_message(datastores) -> str`. Base `check()` enforces cooldown before calling `evaluate`. Reference subscription via `subscription_name`.
 
 ### Auth & credentials
 
