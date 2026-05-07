@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from dataclasses import fields
+import threading
+from dataclasses import Field, fields
+from datetime import datetime, timedelta
 from pathlib import Path
-
-import polars as pl
 
 from .protocols import RestResponseOutput
 
@@ -21,74 +21,150 @@ TYPE_MAPPER = {
 
 
 class DataStore:
-    def __init__(self, name: str) -> None:
-        self.name = name
-        self._ko_fields: list = []
-        self.columns: list[str] = []
-        self.rows: list[tuple] = []
-        self._rows_saved: int = 0
+    """SQLite-backed store for polled subscription outputs.
 
-        self._col_defs = ""
-        self._placeholders = ""
+    One DataStore per client, which owns one SQLite file with one table per
+    subscription. Tables are addressed by subscription name. Rows are buffered
+    in memory and flushed on `save()`. On init, a retention sweep deletes
+    rows older than `retention_days` from every table in the file.
 
-    @classmethod
-    def from_endpoint(
-        cls, name: str, endpoint_schema: type[RestResponseOutput]
-    ) -> DataStore:
-        new_store = cls(name)
-        new_store._ko_fields = [
-            f for f in fields(endpoint_schema) if f.metadata.get("ko")
-        ]
+    `register()` must be called before `update()` for a given name. After
+    `unregister()`, subsequent `update()` calls for that name are logged
+    no-ops — this is the intended race-safe behavior for callers that may
+    poll a subscription concurrently with unsubscribing it.
+    """
 
-        new_store.columns = ["polled_at", *(f.name for f in new_store._ko_fields)]
-        new_store._placeholders = ", ".join("?" * len(new_store.columns))
-        new_store._col_defs = "polled_at TEXT,"  # datatype for "polled_at"
-        new_store._col_defs += ", ".join(
+    def __init__(
+        self,
+        path: Path,
+        retention_days: int = 7,
+    ) -> None:
+        self.path = path
+        self.retention_time = timedelta(days=retention_days)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Single long-lived connection. `check_same_thread=False` plus the
+        # lock allows sharing across the asyncio loop and any executor threads.
+        self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        # Write-ahead log (WAL) mode allows concurrent read and write
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._lock = threading.Lock()
+
+        self._ko_fields: dict[str, list[Field]] = {}
+        self._placeholders: dict[str, str] = {}
+        self._buffers: dict[str, list[tuple]] = {}
+
+        self._sweep_retention()
+
+    def _sweep_retention(self) -> None:
+        cutoff = (datetime.now() - self.retention_time).isoformat()
+        with self._lock:
+            tables = [
+                row[0]
+                for row in self._conn.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                )
+            ]
+
+            n_rows_deleted = 0
+            for table in tables:
+                cur = self._conn.execute(
+                    f'DELETE FROM "{table}" WHERE polled_at < ?', (cutoff,)
+                )
+                n_rows_deleted += cur.rowcount
+
+            self._conn.commit()
+
+        logger.info(
+            f"Retention sweep: deleted {n_rows_deleted} row(s) older than {cutoff} "
+            f"across {len(tables)} table(s)"
+        )
+
+    def register(self, name: str, schema: type[RestResponseOutput]) -> None:
+        if name in self._ko_fields:
+            logger.debug(f"`{name}` already registered; skipping")
+            return
+
+        ko_fields = [f for f in fields(schema) if f.metadata.get("ko")]
+        placeholders = ", ".join("?" * (1 + len(ko_fields)))
+
+        col_defs = "polled_at TEXT, "
+        col_defs += ", ".join(
             # list[str].__args__[0] returns str (the "inner" type)
             # Plain types (int, str, ...) have no __args__ attribute
-            [
-                f"{f.name} {TYPE_MAPPER[f.type.__args__[0] if hasattr(f.type, '__args__') else f.type]}"
-                for f in new_store._ko_fields
-            ]
-        )  # datatypes for other columns
+            f"{f.name} {TYPE_MAPPER[f.type.__args__[0] if hasattr(f.type, '__args__') else f.type]}"  # type: ignore[attr-defined]
+            for f in ko_fields
+        )
 
-        new_store.rows = []
-        return new_store
+        with self._lock:
+            self._conn.execute(f'CREATE TABLE IF NOT EXISTS "{name}" ({col_defs})')
+            self._conn.commit()
 
-    def update(self, new_output: RestResponseOutput) -> None:
-        output = new_output
+        self._ko_fields[name] = ko_fields
+        self._placeholders[name] = placeholders
+        self._buffers[name] = []
+        logger.debug(f"Registered `{name}`")
+
+    def update(self, name: str, output: RestResponseOutput) -> None:
+        # Both lookups via `.get()` so a concurrent `unregister()` between them
+        # cannot raise KeyError. If `unregister()` deletes the dict entry after
+        # this point, rows land on an orphaned list — a silent no-op, matching
+        # the docstring's race-safety contract.
+        ko_fields = self._ko_fields.get(name)
+        buffer = self._buffers.get(name)
+        if ko_fields is None or buffer is None:
+            logger.warning(f"`update()` called for unregistered subscription `{name}`")
+            return
+
         polled_at = output.polled_at.isoformat()
-
         if isinstance(output.output_raw, dict):
-            self.rows.append(
-                (polled_at, *(getattr(output, f.name) for f in self._ko_fields))
-            )
+            buffer.append((polled_at, *(getattr(output, f.name) for f in ko_fields)))
         else:
-            for values in zip(*(getattr(output, f.name) for f in self._ko_fields)):
-                self.rows.append((polled_at, *values))
+            for values in zip(*(getattr(output, f.name) for f in ko_fields)):
+                buffer.append((polled_at, *values))
 
-    def to_polars(self):
-        return pl.DataFrame(self.rows, schema=self.columns, orient="row")
+    def save(self, name: str | None = None) -> None:
+        names = [name] if name is not None else list(self._buffers)
+        with self._lock:
+            flushed: list[str] = []
+            for n in names:
+                rows = self._buffers.get(n)
+                if not rows:
+                    continue
 
-    def save_to_disk(self, path: Path) -> None:
-        rows_to_save = self.rows[self._rows_saved :]
-        with sqlite3.connect(path) as conn:
-            conn.execute(f'CREATE TABLE IF NOT EXISTS "{self.name}" ({self._col_defs})')
-            conn.executemany(
-                f'INSERT INTO "{self.name}" VALUES ({self._placeholders})', rows_to_save
-            )
-            self._rows_saved += len(rows_to_save)
+                self._conn.executemany(
+                    f'INSERT INTO "{n}" VALUES ({self._placeholders[n]})', rows
+                )
+                logger.debug(f"Saved `{n}` ({len(rows)} row(s)) to `{self.path}`")
+                flushed.append(n)
 
-        logger.debug(f"Saved `{self.name}` ({len(rows_to_save)} rows) to `{path}`")
+            self._conn.commit()
+            # Clear buffers only after commit succeeds, so a failed commit
+            # leaves the in-memory rows intact for the next `save()`.
+            for n in flushed:
+                self._buffers[n] = []
 
-    @classmethod
-    def from_disk(cls, path: Path, name: str) -> DataStore:
-        store = cls(name)
+    def unregister(self, name: str) -> None:
+        if name not in self._ko_fields:
+            logger.debug(f"`{name}` not registered; nothing to unregister")
+            return
 
-        with sqlite3.connect(path) as conn:
-            cursor = conn.execute(f'SELECT * FROM "{name}"')
-            store.columns = [desc[0] for desc in cursor.description]
-            store.rows = list(cursor.fetchall())
-            store._rows_saved = len(store.rows)
+        self.save(name)
+        del self._ko_fields[name]
+        del self._placeholders[name]
+        del self._buffers[name]
+        logger.debug(f"Unregistered `{name}` (table preserved)")
 
-        return store
+    def read(self, name: str) -> tuple[list[str], list[tuple]]:
+        with self._lock:
+            cursor = self._conn.execute(f'SELECT * FROM "{name}"')
+            columns = [desc[0] for desc in cursor.description]
+            rows = list(cursor.fetchall())
+
+        return columns, rows
+
+    def close(self) -> None:
+        self.save()
+        with self._lock:
+            self._conn.close()

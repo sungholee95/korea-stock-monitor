@@ -193,6 +193,7 @@ class KiwoomClient:
         auth: KiwoomAuth,
         rest_poll_rate: int | float = 60,
         data_path: Path = _DEFAULT_DATA_PATH,
+        data_retention_days: int = 7,
     ):
         logger.info(
             f"Initializing KiwoomClient with REST polling rate: {rest_poll_rate}s"
@@ -203,7 +204,7 @@ class KiwoomClient:
         self.ws_client = _KiwoomWebSocketClient(auth, rate_limit_delay=1)
 
         self._subscribed: dict[str, KiwoomSubscription] = {}
-        self.datastores: dict[str, DataStore] = {}
+        self.datastore = DataStore(data_path, retention_days=data_retention_days)
         self.alerts: set[BaseAlert] = set()
         self._alerts_by_sub: dict[str, set[BaseAlert]] = {}
         self._alerts_changed = asyncio.Event()
@@ -245,9 +246,7 @@ class KiwoomClient:
                 raise ValueError(err_msg)
 
         self._subscribed[name] = new_sub
-        self.datastores[name] = DataStore.from_endpoint(
-            name, new_sub.response_spec._output_schema
-        )
+        self.datastore.register(name, new_sub.response_spec._output_schema)
         logger.debug(f"Subscribed to {name!r} (via {endpoint.method.name!r})")
 
     def _unsubscribe(self, name: str) -> None:
@@ -260,7 +259,7 @@ class KiwoomClient:
             elif unsubbed.req.method == Method.WEBSOCKET:
                 raise NotImplementedError()
 
-            self.datastores.pop(name)
+            self.datastore.unregister(name)
             logger.debug(f"Unsubscribed from {name!r}")
         else:
             logger.debug(f"No subscription found for {name!r}")
@@ -271,11 +270,12 @@ class KiwoomClient:
                 if response is None:
                     continue
 
-                self.datastores[name].update(response.output)
-                self.datastores[name].save_to_disk(self.data_path)
+                self.datastore.update(name, response.output)
 
                 for alert in self._alerts_by_sub.get(name, ()):
                     alert.ingest(response.output)
+
+            self.datastore.save()
 
     async def alert_loop(self) -> AsyncGenerator[tuple[BaseAlert, str]]:
         while True:
@@ -311,12 +311,6 @@ class KiwoomClient:
                 if message:
                     logger.info(f"Alert triggered: {alert.name!r}")
                     yield alert, message
-
-    def save(self) -> None:
-        self.data_path.parent.mkdir(parents=True, exist_ok=True)
-        for store in self.datastores.values():
-            store.save_to_disk(self.data_path)
-        logger.info(f"Saved all datastores to `{self.data_path}`")
 
     def execute_all_rest(self) -> dict[str, KiwoomRestResponse | None]:
         return self.rest_client.execute_all()
