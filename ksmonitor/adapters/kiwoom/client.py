@@ -206,6 +206,7 @@ class KiwoomClient:
         self.datastores: dict[str, DataStore] = {}
         self.alerts: set[BaseAlert] = set()
         self._alerts_by_sub: dict[str, set[BaseAlert]] = {}
+        self._alerts_changed = asyncio.Event()
 
     @staticmethod
     def _subscription_key(endpoint: KiwoomEndpoint, params: dict[str, str]) -> str:
@@ -264,11 +265,7 @@ class KiwoomClient:
         else:
             logger.debug(f"No subscription found for {name!r}")
 
-    async def start(self) -> None:
-        logger.info("Starting KiwoomClient")
-        await asyncio.gather(self._poll_loop(), self._alert_loop())
-
-    async def _poll_loop(self) -> None:
+    async def poll_loop(self) -> None:
         async for polled in self.rest_client.poll():
             for name, response in polled.items():
                 if response is None:
@@ -280,17 +277,27 @@ class KiwoomClient:
                 for alert in self._alerts_by_sub.get(name, ()):
                     alert.ingest(response.output)
 
-    async def _alert_loop(self) -> None:
-        if not self.alerts:
-            return
-
+    async def alert_loop(self) -> AsyncGenerator[tuple[BaseAlert, str]]:
         while True:
-            try:
-                now = datetime.now()
-                next_times = [alert.next_eval_time(now) for alert in self.alerts]
-                next_due = min(next_times)
+            self._alerts_changed.clear()
+            now = datetime.now()
+            if self.alerts:
+                next_due = min(alert.next_eval_time(now) for alert in self.alerts)
                 sleep_secs = max(0.1, (next_due - now).total_seconds())
-                await asyncio.sleep(sleep_secs)
+            else:
+                # `None` -> wait indefinitely
+                sleep_secs = None
+
+            try:
+                await asyncio.wait_for(self._alerts_changed.wait(), sleep_secs)
+                # if alert changes, `_alert_changed.wait()` returns True, and
+                # asyncio.wait_for also returns normally, triggering `continue`.
+                # Otherwise, we wait for `sleep_secs` (computed from the registered
+                # alerts) asyncio.TimeoutError is raised, and we move on to the
+                # rest of the alert loop.
+                continue
+            except asyncio.TimeoutError:
+                pass
             except asyncio.CancelledError:
                 logger.info("Alert loop cancelled")
                 break
@@ -299,11 +306,11 @@ class KiwoomClient:
             for alert in self.alerts:
                 if not alert.is_due(now):
                     continue
+
                 message = alert.check()
                 if message:
                     logger.info(f"Alert triggered: {alert.name!r}")
-                    print(message)
-                    # TODO: dispatch to Telegram adapter
+                    yield alert, message
 
     def save(self) -> None:
         self.data_path.parent.mkdir(parents=True, exist_ok=True)
@@ -325,7 +332,9 @@ class KiwoomClient:
                 )
             self._alerts_by_sub.setdefault(key, set()).add(alert)
             self.alerts.add(alert)
-            logger.debug(f"Registered alert {alert.name!r} on {key!r}")
+            logger.info(f"Registered alert {alert.name!r} on {key!r}")
+
+        self._alerts_changed.set()
 
     def unregister_alert(self, alert: BaseAlert) -> None:
         key = self._subscription_key(alert.endpoint, alert.endpoint_params)
@@ -335,5 +344,7 @@ class KiwoomClient:
             if not watchers:
                 self._alerts_by_sub.pop(key, None)
                 self._unsubscribe(key)
+
         self.alerts.discard(alert)
-        logger.debug(f"Unregistered alert {alert.name!r}")
+        self._alerts_changed.set()
+        logger.info(f"Unregistered alert {alert.name!r}")

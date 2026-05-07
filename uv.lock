@@ -521,7 +521,7 @@ wheels = [
 
 [[package]]
 name = "korea-stock-monitor"
-version = "0.1.0.dev0"
+version = "0.9.0.dev0"
 source = { editable = "." }
 dependencies = [
     { name = "keyring" },

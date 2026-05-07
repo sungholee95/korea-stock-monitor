@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from ksmonitor.adapters.kiwoom import KiwoomEndpoint
 from ksmonitor.core import market_time
@@ -24,9 +24,19 @@ class BaseAlert(ABC):
     `evaluate()` is called when its bucket/interval completes and reads only
     that cached state.
 
+    Subclasses should exclusively use positional arguments to cleanly integrate
+    with `TelegramBot`'s alert registration mechanism.
+
     `check()` is the scheduler entry point; it enforces cooldown and calls
     `evaluate` / `format_message`.
+
+    Identity (`__hash__` / `__eq__`) is value-based on `(type_key, spec())` so
+    that two instances constructed with the same args are interchangeable as
+    dict/set keys. `name` is reserved for human-readable strings (logs, user
+    messages) and intentionally excluded from identity.
     """
+
+    type_key: ClassVar[str]
 
     def __init__(
         self,
@@ -41,6 +51,16 @@ class BaseAlert(ABC):
         self.endpoint_params = dict(endpoint_params or {})
         self._cooldown = timedelta(minutes=cooldown_minutes)
         self._last_fired: datetime | None = None
+
+    def __hash__(self) -> int:
+        return hash((self.type_key, self.spec()))
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, BaseAlert)
+            and self.type_key == other.type_key
+            and self.spec() == other.spec()
+        )
 
     def next_eval_time(self, now: datetime) -> datetime:
         """Return the next time this alert wants to be evaluated.
@@ -92,6 +112,15 @@ class BaseAlert(ABC):
         """Format the alert message for the given event from `evaluate`."""
         raise NotImplementedError()
 
+    @abstractmethod
+    def spec(self) -> tuple[str | float, ...]:
+        """Positional constructor args sufficient to reconstruct this alert.
+
+        Used as the value-based identity key (with `type_key`) and as the
+        serialization payload for `TelegramBot.save_user_configs`.
+        """
+        raise NotImplementedError()
+
 
 @dataclass(slots=True)
 class _TickerSample:
@@ -113,19 +142,17 @@ class TradeValue(BaseAlert):
     post-reset value.
     """
 
+    type_key = "거래대금"
+
     def __init__(
         self,
         threshold_krw: float,
-        *,
         window_minutes: int = 1,
         cooldown_minutes: float = 0.0,
     ) -> None:
         self.threshold_krw = threshold_krw
         self.window_minutes = window_minutes
-        name = (
-            f"거래대금 {self._number_to_natural(threshold_krw)}원 돌파 "
-            f"({window_minutes}분 기준)"
-        )
+        name = f"거래대금 {window_minutes}분봉 {self._number_to_natural(threshold_krw)}원 돌파"
         super().__init__(
             name=name,
             endpoint=KiwoomEndpoint.거래대금상위요청,
@@ -230,12 +257,19 @@ class TradeValue(BaseAlert):
             return f"{num / 1_000_000_000_000:.1f}조"
         elif num >= 100_000_000:
             return f"{num / 100_000_000:.1f}억"
-        elif num >= 1_000_000:
-            return f"{num / 1_000_000:.1f}백만"
+        elif num >= 10_000:
+            return f"{num / 10_000:.1f}만"
         elif num >= 1_000:
             return f"{num / 1_000:.1f}천"
         else:
             return str(num)
+
+    def spec(self) -> tuple[float, int, float]:
+        return (
+            self.threshold_krw,
+            self.window_minutes,
+            self._cooldown.total_seconds() / 60,
+        )
 
     def format_message(self, event: list[str]) -> str:
         polled_at = max(self._latest[t].polled_at for t in event).strftime(
@@ -256,4 +290,5 @@ class TradeValue(BaseAlert):
 
             logger.debug(f"거래대금 증가분: {delta}")
             logger.debug(f"누적 거래대금: {latest.value}")
+
         return "\n".join(lines) + "\n"
