@@ -31,7 +31,7 @@ class TelegramBot:
     def __init__(
         self, alert_register_callback: Callable, alert_unregister_callback: Callable
     ) -> None:
-        token = keyring.get_password("telegram", "token")
+        token = keyring.get_password("ksmonitorTelegramBot", "token")
         if token is None:
             err_msg = "Telegram token not found in credentials manager"
             logger.error(err_msg)
@@ -59,7 +59,9 @@ class TelegramBot:
         await update.message.reply_text("알림이 모두 해지되었습니다.")
 
     async def _help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        help_msg = "명령어: /stop, /help, /alert <alert>, /unalert <alert>"
+        help_msg = (
+            "명령어: /start, /stop, /help, /alert <alert>, /unalert <alert>, /status"
+        )
         await update.message.reply_text(help_msg)
 
     async def _list_args(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -173,6 +175,15 @@ class TelegramBot:
             await asyncio.Event().wait()
 
     async def notify(self, alert: BaseAlert, message: str) -> None:
+        # Telegram API imposes a 4096-character limit;
+        #  just cut it off for now -- definitely not a common occurence
+
+        # TODO: split messages at natural breaks; maybe Alerts should return
+        #  collections of messages instead even.
+
+        if len(message) > 4096:
+            message = message[:4096]
+
         await asyncio.gather(
             *(
                 self.application.bot.send_message(chat_id, message)

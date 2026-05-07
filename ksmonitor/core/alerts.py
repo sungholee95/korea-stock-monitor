@@ -158,6 +158,8 @@ class TradeValue(BaseAlert):
             endpoint=KiwoomEndpoint.거래대금상위요청,
             cooldown_minutes=cooldown_minutes,
         )
+        # TODO: cooldown_minutes should apply on a per-ticker basis?
+        #  avoids same big players notifying every minute
 
         self._latest: dict[str, _TickerSample] = {}
         self._bucket_start: dict[str, _TickerSample] = {}
@@ -238,6 +240,7 @@ class TradeValue(BaseAlert):
     def evaluate(self) -> list[str] | None:
         """Return ticker codes that crossed threshold this evaluation, or None."""
         fired: list[str] = []
+        deltas = []
         for ticker, latest in self._latest.items():
             if ticker in self._triggered_this_bucket:
                 continue
@@ -245,9 +248,15 @@ class TradeValue(BaseAlert):
             if baseline is None:
                 continue
 
-            if latest.value - baseline.value >= self.threshold_krw:
+            delta = latest.value - baseline.value
+            if delta >= self.threshold_krw:
                 self._triggered_this_bucket.add(ticker)
                 fired.append(ticker)
+                deltas.append(delta)
+
+        if fired:
+            # sort tickers, highest delta first
+            fired = [f for _, f in sorted(zip(deltas, fired), reverse=True)]
 
         return fired or None
 
@@ -281,14 +290,11 @@ class TradeValue(BaseAlert):
             latest = self._latest[ticker]
             baseline = self._bucket_start[ticker]
             delta = latest.value - baseline.value
-            lines.append(f"~~~ {latest.name} ({ticker}) ~~~")
             lines.append(
-                f"{self.window_minutes}분 거래대금: {self._number_to_natural(delta)}원"
+                f"~~~ {latest.name} ({ticker}) ~~~\n"
+                f"{self.window_minutes}분 거래대금: {self._number_to_natural(delta)}원\n"
+                f"상승률: {delta / baseline.value * 100:.2f}%\n"
+                f"누적 거래대금: {self._number_to_natural(latest.value)}원"
             )
-            lines.append(f"상승률: {delta / baseline.value * 100:.2f}%")
-            lines.append(f"누적 거래대금: {self._number_to_natural(latest.value)}원")
-
-            logger.debug(f"거래대금 증가분: {delta}")
-            logger.debug(f"누적 거래대금: {latest.value}")
 
         return "\n".join(lines) + "\n"
