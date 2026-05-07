@@ -158,11 +158,10 @@ class TradeValue(BaseAlert):
             endpoint=KiwoomEndpoint.거래대금상위요청,
             cooldown_minutes=cooldown_minutes,
         )
-        # TODO: cooldown_minutes should apply on a per-ticker basis?
-        #  avoids same big players notifying every minute
 
         self._latest: dict[str, _TickerSample] = {}
         self._bucket_start: dict[str, _TickerSample] = {}
+        self._last_fired_per_ticker: dict[str, datetime] = {}
         # Bucket identity per ticker, kept separate from sample timestamps so
         # baselines adopted from the prior bucket's last sample don't trigger
         # spurious bucket-changed detections on subsequent same-bucket polls.
@@ -172,10 +171,33 @@ class TradeValue(BaseAlert):
         self._last_eval_bucket: int | None = None
 
     def check(self) -> str | None:
-        now = datetime.now()
+        if not self._latest:
+            return None
+
+        now = max(s.polled_at for s in self._latest.values())
         current_bucket = market_time.bucket_index(now, minutes=self.window_minutes)
         self._last_eval_bucket = current_bucket
-        return super().check()
+
+        fired = self.evaluate()
+        if not fired:
+            return None
+
+        # Per-ticker cooldown
+        should_fire = []
+        for f in fired:
+            last_fired = self._last_fired_per_ticker.get(f)
+            if last_fired is None or now - last_fired >= self._cooldown:
+                should_fire.append(f)
+
+        if not should_fire:
+            return None
+
+        for f in should_fire:
+            self._last_fired_per_ticker[f] = now
+
+        message = self.format_message(should_fire)
+        logger.info(f"Alert {self.name!r} fired")
+        return message
 
     def is_due(self, now: datetime) -> bool:
         """Return True if we've entered a new bucket since the last evaluation."""

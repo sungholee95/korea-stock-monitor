@@ -403,3 +403,94 @@ class TestBaseAlertScheduling:
         t = datetime(2026, 1, 1, 8, 7, 15)
         next_time = alert.next_eval_time(t)
         assert next_time == datetime(2026, 1, 1, 8, 10, 0, 200000)
+
+
+class TestTradeValueCooldown:
+    threshold = 10_000_000_000
+
+    def _alert(self, cooldown_minutes: float = 10.0) -> TradeValue:
+        return TradeValue(
+            threshold_krw=self.threshold,
+            window_minutes=1,
+            cooldown_minutes=cooldown_minutes,
+        )
+
+    def _ingest(
+        self,
+        alert: TradeValue,
+        timestamp: datetime,
+        rows: list[tuple[str, str, float]],
+    ) -> None:
+        # rows are (stock code, name, threshold multiplier)
+        alert.ingest(
+            _output(
+                timestamp,
+                [(c, n, self.threshold / 1e6 * m) for c, n, m in rows],
+            )
+        )
+
+    def test_same_ticker_within_cooldown_suppressed(self):
+        alert = self._alert()
+        self._ingest(
+            alert, datetime(2026, 1, 1, 8, 0, 10), [("005930", "삼성전자", 0.1)]
+        )
+
+        self._ingest(
+            alert, datetime(2026, 1, 1, 8, 1, 10), [("005930", "삼성전자", 1.5)]
+        )
+        msg1 = alert.check()
+        assert msg1 is not None and "005930" in msg1, 1
+
+        # 1 min passed since last; cooldown active
+        self._ingest(
+            alert, datetime(2026, 1, 1, 8, 2, 10), [("005930", "삼성전자", 3.0)]
+        )
+        assert alert.check() is None, 2
+
+    def test_other_ticker_fires_while_first_in_cooldown(self):
+        alert = self._alert()
+        self._ingest(
+            alert,
+            datetime(2026, 1, 1, 8, 0, 10),
+            [("005930", "삼성전자", 0.1), ("035720", "카카오", 0.1)],
+        )
+
+        # only 삼성전자 crosses threshold
+        self._ingest(
+            alert,
+            datetime(2026, 1, 1, 8, 1, 10),
+            [("005930", "삼성전자", 1.5), ("035720", "카카오", 0.1)],
+        )
+        msg1 = alert.check()
+        assert msg1 is not None and "005930" in msg1, 1
+
+        # Samsung in cooldown, Kakao should fire alone
+        self._ingest(
+            alert,
+            datetime(2026, 1, 1, 8, 2, 10),
+            [("005930", "삼성전자", 3.1), ("035720", "카카오", 1.5)],
+        )
+        msg2 = alert.check()
+        assert msg2 is not None, 2
+        assert "035720" in msg2, 3
+        assert "005930" not in msg2, 4
+
+    def test_same_ticker_fires_again_after_cooldown_expires(self):
+        alert = self._alert(cooldown_minutes=1)
+        self._ingest(
+            alert, datetime(2026, 1, 1, 8, 0, 10), [("005930", "삼성전자", 0.1)]
+        )
+
+        self._ingest(
+            alert, datetime(2026, 1, 1, 8, 1, 10), [("005930", "삼성전자", 1.5)]
+        )
+        assert alert.check() is not None, 1
+
+        self._ingest(
+            alert, datetime(2026, 1, 1, 8, 3, 10), [("005930", "삼성전자", 1.7)]
+        )
+        self._ingest(
+            alert, datetime(2026, 1, 1, 8, 4, 10), [("005930", "삼성전자", 3.0)]
+        )
+        msg2 = alert.check()
+        assert msg2 is not None and "005930" in msg2, 2
