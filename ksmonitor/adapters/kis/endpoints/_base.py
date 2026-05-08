@@ -56,12 +56,12 @@ class KISBaseRestResponseOutput(ABC):
             else self.output_raw[0].keys()
         )
         expected = {f.name for f in fields(self) if f.metadata.get("ko")}
-        unexpected = expected - actual
-        missing = actual - expected
+        missing = expected - actual  # in schema, not in response
+        unexpected = actual - expected  # in response, not in schema
         if missing:
-            logger.warning(f"Missing keys in schema: {missing}")
+            logger.warning(f"Missing keys in output: {missing}")
         if unexpected:
-            logger.warning(f"Unexpected keys in output: {unexpected}")
+            logger.warning(f"Unexpected keys in output (not in schema): {unexpected}")
 
         return unexpected, missing
 
@@ -189,7 +189,7 @@ class KISBaseRestRequest(ABC):
     @abstractmethod
     def get_headers(self) -> dict[str, str]:
         err = (
-            "Subclasses should call `super()._base_headers()` "
+            "Subclasses should call `super()._get_base_headers()` "
             "and add any additional headers if needed"
         )
         raise NotImplementedError(err)
