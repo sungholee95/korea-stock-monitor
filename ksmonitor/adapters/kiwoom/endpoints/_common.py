@@ -22,13 +22,9 @@ class KiwoomEndpoint(Enum):
     - api_id: Transaction ID
     - api_path: API path
 
-    Validation:
-    - WebSocket: api_path must not be provided (auto-set)
-    - REST: api_path is required
-
     Access Methods:
-    - via name: KiwoomEndpoint.VOLUME_RANK_REST
-    - via api_id (value): KiwoomEndpoint("FHPST01710000")
+    - via name: KiwoomEndpoint.거래대금상위요청
+    - via api_id (value): KiwoomEndpoint("ka10032")
 
     """
 

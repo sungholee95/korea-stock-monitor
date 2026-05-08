@@ -202,9 +202,9 @@ class TradeValue(BaseAlert):
     def is_due(self, now: datetime) -> bool:
         """Return True if we've entered a new bucket since the last evaluation."""
         current_bucket = market_time.bucket_index(now, minutes=self.window_minutes)
-        if self._last_eval_bucket is None or current_bucket > self._last_eval_bucket:
-            return True
-        return False
+        return (
+            self._last_eval_bucket is None or current_bucket > self._last_eval_bucket
+        )
 
     def next_eval_time(self, now: datetime) -> datetime:
         """Return the earliest time the next bucket can be fully evaluated.

@@ -169,7 +169,7 @@ class KiwoomBaseRestRequest(ABC):
     @abstractmethod
     def get_headers(self) -> dict[str, str]:
         err = (
-            "Subclasses should call `super()._base_headers()` "
+            "Subclasses should call `super()._get_base_headers()` "
             "and add any additional headers if needed"
         )
         raise NotImplementedError(err)
