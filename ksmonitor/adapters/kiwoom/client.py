@@ -107,8 +107,6 @@ class _KiwoomRestClient:
                 raise ValueError(err_msg)
 
     async def poll(self) -> AsyncGenerator[dict[str, KiwoomRestResponse | None], None]:
-        self._enforce_rate_limit()
-
         while True:
             try:
                 response = self.execute_all()
@@ -153,6 +151,8 @@ class _KiwoomRestClient:
             query_params=query_params,
         )
         self._subscribed[name] = subscription
+        self._enforce_rate_limit()
+
         logger.info(f"Successfully subscribed to {name}")
         return subscription
 
