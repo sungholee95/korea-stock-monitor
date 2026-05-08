@@ -27,19 +27,31 @@ _DEFAULT_CONFIG_PATH = Path("~").expanduser() / ".ksmonitor" / "config" / "core.
 ALERTS_REGISTRY = {"거래대금": TradeValue}
 
 
+def get_telegram_token(config_path: Path = _DEFAULT_CONFIG_PATH) -> str:
+    with open(config_path, "r") as f:
+        cfg = yaml.safe_load(f)
+        token_service_name = cfg["telegram.bot.svc_name"]
+
+    token = keyring.get_password(token_service_name, "token")
+    if token is None:
+        err_msg = (
+            f"Telegram token not found in credentials manager. "
+            f"(Could not find {token_service_name}@token)"
+        )
+        logger.error(err_msg)
+        raise ValueError(err_msg)
+
+    return token
+
+
 class TelegramBot:
     def __init__(
         self, alert_register_callback: Callable, alert_unregister_callback: Callable
     ) -> None:
-        token = keyring.get_password("ksmonitorTelegramBot", "token")
-        if token is None:
-            err_msg = "Telegram token not found in credentials manager"
-            logger.error(err_msg)
-            raise ValueError(err_msg)
-
         self.alert_register_callback = alert_register_callback
         self.alert_unregister_callback = alert_unregister_callback
 
+        token = get_telegram_token()
         self.application: Application = ApplicationBuilder().token(token).build()
         self.users_per_alert: dict[BaseAlert, set[int]] = defaultdict(set)
         self.alerts_per_user: dict[int, set[BaseAlert]] = defaultdict(set)
@@ -218,6 +230,7 @@ class TelegramBot:
         if path.exists():
             with open(path, "r", encoding="utf-8") as f:
                 existing = yaml.safe_load(f) or {}
+
         existing["telegram.bot.users_per_alert"] = records
 
         path.parent.mkdir(parents=True, exist_ok=True)
