@@ -24,11 +24,11 @@ async def start(client: KiwoomClient, bot: TelegramBot):
 
 
 if __name__ == "__main__":
-    filename = Path("log.log")
+    filename = Path("~").expanduser() / ".ksmonitor" / "logs" / "ksmonitor.log"
     logging.basicConfig(
         filename=filename,
         filemode="w",
-        level=logging.DEBUG,
+        level=logging.INFO,
         format="%(levelname)s:\t%(name)s - %(message)s - %(asctime)s",
         encoding="utf-8",
     )
