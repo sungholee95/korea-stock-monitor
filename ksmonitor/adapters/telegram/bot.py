@@ -24,7 +24,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _DEFAULT_CONFIG_PATH = Path("~").expanduser() / ".ksmonitor" / "config" / "core.yaml"
 
-ALERTS_REGISTRY = {"거래대금": TradeValue}
+ALERTS_REGISTRY = {
+    "거래대금": TradeValue,
+    "TradeValue": TradeValue,
+}
 
 
 def get_telegram_token(config_path: Path = _DEFAULT_CONFIG_PATH) -> str:
