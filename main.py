@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from pathlib import Path
 
 from ksmonitor.adapters.kiwoom import (
@@ -23,8 +24,36 @@ async def start(client: KiwoomClient, bot: TelegramBot):
     )
 
 
+def init():
+    import shutil
+
+    configs_path = Path("~").expanduser() / ".ksmonitor" / "configs"
+    try:
+        configs_path.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        msg = (
+            f"configs directory already exists at {configs_path}. "
+            "To re-init, delete the existing directory"
+        )
+        raise FileExistsError(msg) from None
+
+    if Path("examples").exists():
+        shutil.copy(Path("examples") / "core.yaml", configs_path)
+        shutil.copy(Path("examples") / "kiwoom.yaml", configs_path)
+
+    print(
+        f"Directory created at {configs_path}. "
+        f"Make sure to modify the config files to match the usernames in Credential Manager"
+    )
+    sys.exit()
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "init":
+        init()
+
     filename = Path("~").expanduser() / ".ksmonitor" / "logs" / "ksmonitor.log"
+    filename.parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         filename=filename,
         filemode="w",
@@ -36,7 +65,7 @@ if __name__ == "__main__":
 
     config = KiwoomConfig.from_yaml()
     auth = KiwoomAuth(config)
-    client = KiwoomClient(auth, rest_poll_rate=1)
+    client = KiwoomClient(auth, rest_poll_rate=20)
     bot = TelegramBot(
         alert_register_callback=client.register_alerts,
         alert_unregister_callback=client.unregister_alert,
