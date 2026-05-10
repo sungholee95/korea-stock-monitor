@@ -75,9 +75,9 @@ The connection is opened with `check_same_thread=False` and guarded by a `thread
 
 ## Auth & Credentials
 
-Secrets live in Windows Credential Manager via `keyring` (service: `"kiwoom"`). The Kiwoom config YAML at `~/.ksmonitor/config/kiwoom.yaml` only holds non-secret identifiers and is whitelisted on load to prevent injection of unknown keys. API base URLs are hardcoded as class attributes on `KiwoomConfig` — never read from YAML — to prevent hijacking.
+Secrets live in Windows Credential Manager via `keyring` (service: `"kiwoom"`). The Kiwoom config YAML at `~/.ksmonitor/configs/kiwoom.yaml` only holds non-secret identifiers and is whitelisted on load to prevent injection of unknown keys. API base URLs are hardcoded as class attributes on `KiwoomConfig` — never read from YAML — to prevent hijacking.
 
-Telegram per-chat alert subscriptions are persisted to `~/.ksmonitor/config/core.yaml` (atomic tmp + `os.replace`); only the bot token lives in keyring (the keyring service name itself is read from `core.yaml` under `telegram.bot.svc_name`).
+Telegram per-chat alert subscriptions are persisted to `~/.ksmonitor/configs/core.yaml` (atomic tmp + `os.replace`); only the bot token lives in keyring (the keyring service name itself is read from `core.yaml` under `telegram.bot.svc_name`).
 
 ---
 
@@ -117,7 +117,7 @@ Alerts carry their target `endpoint` (+ optional `endpoint_params`) directly. `K
 
 Alert identity is value-based on `(type_key, spec())` — two `TradeValue` instances with the same args are interchangeable as dict/set keys, so re-registering across restarts is idempotent.
 
-`TelegramBot` wraps these as the `/alert <type> <args...>` and `/unalert <type> <args...>` commands. Per-chat subscriptions are persisted to `~/.ksmonitor/config/core.yaml` (atomic tmp + `os.replace`) and reloaded on startup, so users don't have to re-register after a restart. `ALERTS_REGISTRY` in `adapters/telegram/bot.py` maps user-facing Korean alert names (e.g. `"거래대금"`) to `BaseAlert` subclasses.
+`TelegramBot` wraps these as the `/alert <type> <args...>` and `/unalert <type> <args...>` commands. Per-chat subscriptions are persisted to `~/.ksmonitor/configs/core.yaml` (atomic tmp + `os.replace`) and reloaded on startup, so users don't have to re-register after a restart. `ALERTS_REGISTRY` in `adapters/telegram/bot.py` maps user-facing Korean alert names (e.g. `"거래대금"`) to `BaseAlert` subclasses.
 
 ---
 

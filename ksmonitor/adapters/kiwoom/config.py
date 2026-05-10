@@ -8,7 +8,7 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CONFIG_PATH = Path("~").expanduser() / ".ksmonitor" / "config" / "kiwoom.yaml"
+_DEFAULT_CONFIG_PATH = Path("~").expanduser() / ".ksmonitor" / "configs" / "kiwoom.yaml"
 
 
 @dataclass(kw_only=True)

@@ -1,0 +1,4 @@
+# Your Telegram bot token will be retreived from the credential manager as
+#    `keyring.get_password("telegram", <token_name>)`
+
+telegram.bot.token_name: "your_token_name"

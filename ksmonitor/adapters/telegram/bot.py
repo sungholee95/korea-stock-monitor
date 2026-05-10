@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from ksmonitor.core.alerts import BaseAlert
 
 logger = logging.getLogger(__name__)
-_DEFAULT_CONFIG_PATH = Path("~").expanduser() / ".ksmonitor" / "config" / "core.yaml"
+_DEFAULT_CONFIG_PATH = Path("~").expanduser() / ".ksmonitor" / "configs" / "core.yaml"
 
 ALERTS_REGISTRY = {
     "거래대금": TradeValue,

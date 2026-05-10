@@ -1,0 +1,25 @@
+# The app key and secret will be retreived from the credential manager as
+#   `keyring.get_password("kiwoom", <my_app_key_name>)`
+#   `keyring.get_password("kiwoom", <my_app_sec_name>)`
+# for prod mode (실전투자) account or
+#   `keyring.get_password("kiwoom", <my_paper_app_key_name>)`
+#   `keyring.get_password("kiwoom", <my_paper_app_sec_name>)`
+# for paper mode (모의투자) account.
+
+# Do NOT store plaintext credentials here
+
+my_app_key_name: "your_prod_app_key_name"
+my_app_sec_name: "your_prod_app_secret_name"
+
+my_paper_app_key_name: "your_paper_app_key_name"
+my_paper_app_sec_name: "your_paper_app_secret_name"
+
+# 실전 증권계좌 (8자리)
+my_acct_stock: ""
+# 실전 선물옵션계좌 (8자리)
+my_acct_future: ""
+
+# 모의 증권계좌 (8자리)
+my_paper_stock: ""
+# 모의 선물옵션계좌 (8자리)
+my_paper_future: ""
