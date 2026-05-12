@@ -12,7 +12,7 @@ uv run pytest tests/kiwoom/test_client.py::TestClass::test_name     # single tes
 uv run ruff check . && uv run ruff format .                         # lint
 ```
 
-Entry points: [main.py](main.py) is the orchestrator (REST poll + alert dispatch + Telegram bot via `asyncio.gather`); [run_kiwoom.py](run_kiwoom.py) is for manual REST testing. [scratches/](scratches/) contains throwaway experiments.
+Entry points: [main.py](main.py) is the orchestrator (REST poll + alert dispatch + Telegram bot via `asyncio.gather`).
 
 ## Project Overview
 
