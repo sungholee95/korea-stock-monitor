@@ -2,7 +2,7 @@
   <h1>Korea Stock Monitor</h1>
 
   <p>
-    ksmonitor (Korea Stock Monitor) is a Python application to monitor the Korean stock market (KRX and NXT) over the Kiwoom API and send alerts via Telegram when custom conditions are met. Alerts are registered and managed through Telegram chat commands.
+    A Python application to monitor the Korean stock market (KRX and NXT) over the Kiwoom API and send alerts via Telegram when custom conditions are met. Alerts are registered and managed through Telegram chat commands.
   </p>
   
 <!-- Badges -->
