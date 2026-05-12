@@ -60,15 +60,11 @@ class KiwoomConfig:
             required_keys = [
                 "my_app_key_name",
                 "my_app_sec_name",
-                "my_acct_stock",
-                "my_acct_future",
             ]
         else:
             required_keys = [
                 "my_paper_app_key_name",
                 "my_paper_app_sec_name",
-                "my_paper_stock",
-                "my_paper_future",
             ]
 
         # Only let allowed keys to be used to prevent eg. API urls from being hijacked
